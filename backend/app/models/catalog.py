@@ -12,6 +12,7 @@ class CatalogItem(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     solution_id = Column(Integer, ForeignKey("solutions.id"), nullable=False)
+    lookup_key = Column(String, nullable=False, unique=True, index=True)
     kind = Column(Enum(CatalogItemKind), nullable=False)
     
     part_number = Column(String, nullable=True) # Blank allowed (e.g. support)

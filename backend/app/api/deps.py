@@ -49,10 +49,13 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         
     return user
 
+def has_permission(required_permission: str, user: User) -> bool:
+    permissions = ROLE_PERMISSIONS.get(user.role_tier, set())
+    return required_permission in permissions
+
 def require_permission(required_permission: str):
     def permission_checker(current_user: User = Depends(get_current_user)):
-        permissions = ROLE_PERMISSIONS.get(current_user.role_tier, set())
-        if required_permission not in permissions:
+        if not has_permission(required_permission, current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, 
                 detail="Not enough permissions"

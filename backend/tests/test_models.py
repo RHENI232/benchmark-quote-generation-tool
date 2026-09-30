@@ -14,12 +14,14 @@ def test_catalog_part_number_not_unique(db):
 
     item1 = CatalogItem(
         solution_id=solution.id,
+        lookup_key="cat_test_dup1",
         kind=CatalogItemKind.RULE_DRIVEN,
         part_number="DUPLICATE_123",
         description="First item"
     )
     item2 = CatalogItem(
         solution_id=solution.id,
+        lookup_key="cat_test_dup2",
         kind=CatalogItemKind.REFERENCE,
         part_number="DUPLICATE_123",
         description="Second item"
@@ -74,6 +76,7 @@ def test_nullable_fields_allowed(db):
 
     catalog_item = CatalogItem(
         solution_id=solution.id,
+        lookup_key="cat_test_nullable",
         kind=CatalogItemKind.REFERENCE,
         description="Null Price Item"
     )

@@ -17,7 +17,12 @@ def db(engine):
     connection = engine.connect()
     transaction = connection.begin()
     
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=connection)
+    SessionLocal = sessionmaker(
+        autocommit=False,
+        autoflush=False,
+        bind=connection,
+        join_transaction_mode="create_savepoint"
+    )
     session = SessionLocal()
     
     yield session
