@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, JSON, ForeignKey, DateTime, Enum, Numeric
+from sqlalchemy import Column, Integer, String, JSON, ForeignKey, DateTime, Enum, Numeric, Boolean
 from sqlalchemy.orm import relationship
 import enum
 import datetime
@@ -32,6 +32,21 @@ class Quote(Base):
     
     status = Column(Enum(QuoteStatus), default=QuoteStatus.DRAFT, nullable=False)
 
+    # CP-4 Snapshot Fields
+    currency_code = Column(String, nullable=False, default="USD")
+    fx_rate_to_usd = Column(Numeric(12, 6), nullable=False, default=1.000000)
+    fx_rate_as_of = Column(String, nullable=True)
+    tax_enabled = Column(Boolean, nullable=False, default=False)
+    tax_rate_percent = Column(Numeric(5, 2), nullable=True)
+    subtotal_sell_usd = Column(Numeric(14, 2), nullable=False, default=0)
+    subtotal_cost_usd = Column(Numeric(14, 2), nullable=False, default=0)
+    tax_amount = Column(Numeric(14, 2), nullable=False, default=0)
+    total_sell_local = Column(Numeric(14, 2), nullable=False, default=0)
+    legal_entity_name = Column(String, nullable=True)
+    legal_entity_registration_number = Column(String, nullable=True)
+    legal_entity_address = Column(String, nullable=True)
+    legal_entity_contact = Column(String, nullable=True)
+
     solution = relationship("Solution", back_populates="quotes")
     region = relationship("Region")
     created_by = relationship("User", foreign_keys=[created_by_user_id])
@@ -56,6 +71,9 @@ class QuoteLineItem(Base):
     # Snapshots for pricing
     unit_sell_price_snapshot = Column(Numeric(12, 2), nullable=False)
     unit_cost_price_snapshot = Column(Numeric(12, 2), nullable=False)
+    line_sell_total = Column(Numeric(14, 2), nullable=False, default=0)
+    line_cost_total = Column(Numeric(14, 2), nullable=False, default=0)
+    margin_percent = Column(Numeric(7, 2), nullable=False, default=0)
 
     quote = relationship("Quote", back_populates="line_items")
     catalog_item = relationship("CatalogItem")
