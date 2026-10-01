@@ -29,6 +29,7 @@ class Quote(Base):
     
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
+    deleted_at = Column(DateTime, nullable=True, index=True)
     
     status = Column(Enum(QuoteStatus), default=QuoteStatus.DRAFT, nullable=False)
 
