@@ -41,7 +41,7 @@ class QuoteLineItemResponse(BaseModel):
     section: Optional[str] = None
     sort_order: int
     quantity: int
-    
+
     # Financial snapshots
     unit_sell_price_snapshot: DecimalStr
     unit_cost_price_snapshot: Optional[DecimalStr] = None
@@ -65,23 +65,36 @@ class QuoteResponse(QuoteBase):
     updated_at: datetime
     status: QuoteStatus
     currency_code: str
-    
+
     fx_rate_to_usd: DecimalStr
     fx_rate_as_of: Optional[str] = None
     tax_enabled: bool
     tax_rate_percent: Optional[DecimalStr] = None
-    
+
     subtotal_sell_usd: DecimalStr
     subtotal_cost_usd: Optional[DecimalStr] = None
     tax_amount: DecimalStr
     total_sell_local: DecimalStr
-    
+
     legal_entity_name: Optional[str] = None
     legal_entity_registration_number: Optional[str] = None
     legal_entity_address: Optional[str] = None
     legal_entity_contact: Optional[str] = None
 
     line_items: List[QuoteLineItemResponse] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+class QuoteSummary(BaseModel):
+    id: int
+    quote_ref_no: str
+    client_name: str
+    region_id: int
+    created_at: datetime
+    date: datetime
+    status: QuoteStatus
+    version: int
+    created_by_user_id: int
 
     model_config = ConfigDict(from_attributes=True)
 
