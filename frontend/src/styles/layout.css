@@ -1,0 +1,130 @@
+.app-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.app-header {
+  background-color: var(--color-brand-900);
+  border-bottom: 1px solid var(--color-brand-800);
+  padding: 0 1.5rem;
+  height: 60px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  box-shadow: var(--shadow-sm);
+}
+
+.app-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.125rem;
+  color: var(--color-white);
+  letter-spacing: 0.025em;
+}
+
+.brand-name {
+  font-weight: 700;
+}
+
+.app-name {
+  font-weight: 400;
+  color: var(--color-gray-300);
+}
+
+.app-user-controls {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.user-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.user-email {
+  font-weight: 500;
+  font-size: var(--font-size-sm);
+  color: var(--color-gray-100);
+}
+
+.user-role {
+  font-size: 0.7rem;
+  color: var(--color-brand-400);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.btn-logout {
+  background: none;
+  border: none;
+  color: var(--color-gray-300);
+  font-weight: 500;
+  font-size: var(--font-size-sm);
+  transition: color 0.2s ease;
+}
+
+.btn-logout:hover {
+  color: var(--color-white);
+}
+
+.app-body {
+  display: flex;
+  flex: 1;
+}
+
+.app-sidebar {
+  width: 220px;
+  background-color: var(--color-white);
+  border-right: 1px solid var(--color-gray-200);
+}
+
+.app-nav {
+  padding: 1.5rem 0;
+}
+
+.app-nav ul {
+  list-style: none;
+}
+
+.app-nav li {
+  margin-bottom: 0.25rem;
+}
+
+.app-nav a {
+  display: block;
+  padding: 0.625rem 1.5rem;
+  color: var(--color-gray-600);
+  font-weight: 500;
+  font-size: var(--font-size-sm);
+  border-left: 3px solid transparent;
+}
+
+.app-nav a:hover {
+  background-color: var(--color-gray-50);
+  color: var(--color-gray-900);
+}
+
+.app-nav a.active {
+  background-color: var(--color-info-bg);
+  color: var(--color-brand-600);
+  border-left-color: var(--color-brand-500);
+  font-weight: 600;
+}
+
+.app-content {
+  flex: 1;
+  min-width: 0;
+  padding: 2.5rem;
+  overflow-y: auto;
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+}
