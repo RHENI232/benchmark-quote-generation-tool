@@ -16,8 +16,8 @@ class PricingEngine:
     @staticmethod
     def calculate_and_save_quote(db: Session, quote: Quote, payload: RequirementPayload, bom: List[BOMLineSpec]) -> Quote:
         """
-        Consumes the RequirementPayload and abstract BOMLineSpec list, 
-        fetches actual catalog pricing using lookup_key, computes financials, 
+        Consumes the RequirementPayload and abstract BOMLineSpec list,
+        fetches actual catalog pricing using lookup_key, computes financials,
         and updates the Quote.
         """
         if quote.status == QuoteStatus.SAVED:
@@ -68,7 +68,7 @@ class PricingEngine:
 
             line_sell_total = unit_sell * qty
             line_cost_total = unit_cost * qty
-            
+
             # Guarded margin %
             margin_percent = Decimal("0.0")
             if unit_sell > Decimal("0.0"):
@@ -102,7 +102,7 @@ class PricingEngine:
         # Process Section 4.9: Support (Calculated last)
         if payload.three_years_support:
             support_price = wtvision_support_basis * Decimal("0.30")
-            
+
             # 0% margin exception
             support_line = QuoteLineItem(
                 quote_id=quote.id,
@@ -127,14 +127,17 @@ class PricingEngine:
             subtotal_cost_usd += support_price
 
         # FX and Tax Application
-        total_sell_local = subtotal_sell_usd * fx_rate
-        
+        total_sell_local = subtotal_sell_usd / fx_rate
+
         tax_enabled = region.tax_enabled
         tax_rate = Decimal(str(region.tax_rate_percent)) if region.tax_rate_percent is not None else Decimal("0.0")
         tax_amount = Decimal("0.0")
-        
+
         if tax_enabled:
             tax_amount = total_sell_local * (tax_rate / Decimal("100.0"))
+
+        # Add tax to final total
+        total_sell_local += tax_amount
 
         # Update Quote snapshots and totals
         quote.currency_code = currency_code
@@ -142,7 +145,7 @@ class PricingEngine:
         quote.fx_rate_as_of = region.fx_rate_as_of
         quote.tax_enabled = tax_enabled
         quote.tax_rate_percent = tax_rate
-        
+
         quote.legal_entity_name = region.legal_entity_name
         quote.legal_entity_registration_number = region.legal_entity_registration_number
         quote.legal_entity_address = region.legal_entity_address
@@ -152,9 +155,9 @@ class PricingEngine:
         quote.subtotal_cost_usd = subtotal_cost_usd
         quote.tax_amount = tax_amount
         quote.total_sell_local = total_sell_local
-        
+
         quote.requirement_data = payload.model_dump()
-        
+
         # Increment version on recalculation
         if quote.version is None:
             quote.version = 1

@@ -12,7 +12,7 @@ from backend.app.models.quote import Quote, QuoteStatus
 from backend.app.models.user import User, RoleTier
 from backend.app.models.region import Region
 from backend.app.models.solution import Solution
-from backend.app.schemas.quote import QuoteCreate, QuoteResponse, QuoteUpdateHeaders, QuoteSaveAction, QuoteDeleteAction, QuoteRecalculate, QuoteSummary
+from backend.app.schemas.quote import QuoteCreate, QuoteResponse, QuoteUpdate, QuoteSaveAction, QuoteDeleteAction, QuoteRecalculate, QuoteSummary
 from backend.app.schemas.requirement import RequirementPayload
 from backend.app.services.engines.requirement_engine import parse_and_evaluate_requirements, RequirementEngineError
 from backend.app.services.engines.pricing_engine import PricingEngine, PricingEngineError
@@ -42,7 +42,7 @@ def list_quotes(
     if limit > 100:
         limit = 100
 
-    query = db.query(Quote).filter(Quote.deleted_at.is_(None), Quote.status == QuoteStatus.SAVED)
+    query = db.query(Quote).filter(Quote.deleted_at.is_(None))
 
     if current_user.role_tier == RoleTier.SALES:
         query = query.filter(Quote.created_by_user_id == current_user.id)
@@ -286,34 +286,53 @@ def get_quote(quote_id: int, db: Session = Depends(get_db), current_user: User =
     return mask_quote_financials_for_sales(resp, current_user)
 
 @router.put("/{quote_id}", response_model=QuoteResponse)
-def update_quote(quote_id: int, payload: QuoteUpdateHeaders, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    quote = db.query(Quote).filter(Quote.id == quote_id).first()
-    if not quote or quote.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Quote not found")
+def update_quote(quote_id: int, payload: QuoteUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    try:
+        quote = db.query(Quote).filter(Quote.id == quote_id).first()
+        if not quote or quote.deleted_at is not None:
+            raise HTTPException(status_code=404, detail="Quote not found")
 
-    if current_user.role_tier == RoleTier.SALES and quote.created_by_user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Forbidden")
+        if current_user.role_tier == RoleTier.SALES and quote.created_by_user_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Forbidden")
 
-    if quote.status != QuoteStatus.DRAFT:
-        raise HTTPException(status_code=409, detail="Only DRAFT quotes can be edited")
+        if quote.status != QuoteStatus.DRAFT:
+            raise HTTPException(status_code=409, detail="Only DRAFT quotes can be edited")
 
-    if payload.expected_version != quote.version:
-        raise HTTPException(status_code=409, detail="Version mismatch (optimistic concurrency)")
+        if payload.expected_version != quote.version:
+            raise HTTPException(status_code=409, detail="Version mismatch (optimistic concurrency)")
 
-    if payload.client_name is not None:
+        region = db.query(Region).filter(Region.id == payload.region_id).first()
+        solution = db.query(Solution).filter(Solution.id == payload.solution_id).first()
+        if not region or not solution:
+            raise HTTPException(status_code=404, detail="Region or Solution not found.")
+
+        quote.region = region
+        quote.solution = solution
         quote.client_name = payload.client_name
-    if payload.attention is not None:
         quote.attention = payload.attention
-    if payload.description is not None:
         quote.description = payload.description
+        quote.last_edited_by_user_id = current_user.id
 
-    quote.last_edited_by_user_id = current_user.id
-    quote.version += 1
-    db.commit()
-    db.refresh(quote)
+        req_payload = RequirementPayload(**payload.requirement_data)
+        bom = parse_and_evaluate_requirements(solution, payload.requirement_data)
 
-    resp = QuoteResponse.model_validate(quote, from_attributes=True).model_dump()
-    return mask_quote_financials_for_sales(resp, current_user)
+        PricingEngine.calculate_and_save_quote(db, quote, req_payload, bom)
+
+        db.commit()
+        db.refresh(quote)
+
+        resp = QuoteResponse.model_validate(quote, from_attributes=True).model_dump()
+        return mask_quote_financials_for_sales(resp, current_user)
+    except (RequirementEngineError, PricingEngineError) as e:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(e))
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error updating quote: {e}")
+        raise HTTPException(status_code=400, detail="Error updating quote.")
 
 @router.post("/{quote_id}/recalculate", response_model=QuoteResponse)
 def recalculate_quote(quote_id: int, payload: QuoteRecalculate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):

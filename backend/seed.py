@@ -86,7 +86,7 @@ def seed_regions(db: Session):
             "legal_entity_name": None,
             "tax_enabled": True,
             "tax_rate_percent": None,
-            "fx_rate_to_usd": None,
+            "fx_rate_to_usd": 0.012,
             "fx_rate_as_of": None
         }
     ]
@@ -122,67 +122,68 @@ def seed_admin_user(db: Session):
         logger.info(f"Updated User: {user_data['email']}")
 
 DEFAULT_CATALOG_DATA = [
+    # DEVELOPMENT/DEMO PRICING ONLY - NOT REAL COMMERCIAL PRICING
     # Ingest
-    {"lookup_key": "cat_wtv_000001", "part_number": "MT1010", "description": "Ingest – base unit, 1 per box", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000002", "part_number": "MT1011", "description": "Each extra channel beyond the first in its box", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000003", "part_number": "MT1020", "description": "Trimmer, one per channel", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000004", "part_number": "BDLKDVQD2", "description": "Ingest Capture Card (4-channel)", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000005", "part_number": "INGSVR101", "description": "Ingest Server hardware, one per box", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 0.00, "cost_price": 0.00},
+    {"lookup_key": "cat_wtv_000001", "part_number": "MT1010", "description": "Ingest – base unit, 1 per box", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 900.0, "cost_price": 600.0},
+    {"lookup_key": "cat_wtv_000002", "part_number": "MT1011", "description": "Each extra channel beyond the first in its box", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 900.0, "cost_price": 600.0},
+    {"lookup_key": "cat_wtv_000003", "part_number": "MT1020", "description": "Trimmer, one per channel", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 900.0, "cost_price": 600.0},
+    {"lookup_key": "cat_wtv_000004", "part_number": "BDLKDVQD2", "description": "Ingest Capture Card (4-channel)", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 1200.0, "cost_price": 800.0},
+    {"lookup_key": "cat_wtv_000005", "part_number": "INGSVR101", "description": "Ingest Server hardware, one per box", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 1350.0, "cost_price": 900.0},
 
     # MAM
-    {"lookup_key": "cat_wtv_000006", "part_number": "MM1000", "description": "wTVision Media Manager, includes 1 Media Agent", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000007", "part_number": "MA1001", "description": "Extra Locations/Media Agents, one per studio", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000008", "part_number": "MAMSVR101", "description": "MAM Server hardware", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 0.00, "cost_price": 0.00},
+    {"lookup_key": "cat_wtv_000006", "part_number": "MM1000", "description": "wTVision Media Manager, includes 1 Media Agent", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 900.0, "cost_price": 600.0},
+    {"lookup_key": "cat_wtv_000007", "part_number": "MA1001", "description": "Extra Locations/Media Agents, one per studio", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 900.0, "cost_price": 600.0},
+    {"lookup_key": "cat_wtv_000008", "part_number": "MAMSVR101", "description": "MAM Server hardware", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 1350.0, "cost_price": 900.0},
 
     # Production Playout
-    {"lookup_key": "cat_wtv_000009", "part_number": "MP0001", "description": "wTVision Media Server, Single Channel FHD", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000010", "part_number": "MP0012", "description": "First Input Manager", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
+    {"lookup_key": "cat_wtv_000009", "part_number": "MP0001", "description": "wTVision Media Server, Single Channel FHD", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 900.0, "cost_price": 600.0},
+    {"lookup_key": "cat_wtv_000010", "part_number": "MP0012", "description": "First Input Manager", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 900.0, "cost_price": 600.0},
 
     # Playout Controller
-    {"lookup_key": "cat_wtv_000011", "part_number": "SC1000", "description": "Studio CG — central control app", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000012", "part_number": "STDCG101", "description": "Studio CG Control PC hardware", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 0.00, "cost_price": 0.00},
-    {"lookup_key": "cat_wtv_000013", "part_number": "PL1001", "description": "R³ Engine Plugin for Studio CG", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000014", "part_number": "PL1004", "description": "Media Server Controller Plugin", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
+    {"lookup_key": "cat_wtv_000011", "part_number": "SC1000", "description": "Studio CG — central control app", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 750.0, "cost_price": 500.0},
+    {"lookup_key": "cat_wtv_000012", "part_number": "STDCG101", "description": "Studio CG Control PC hardware", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 2800.0, "cost_price": 2000.0},
+    {"lookup_key": "cat_wtv_000013", "part_number": "PL1001", "description": "R³ Engine Plugin for Studio CG", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 450.0, "cost_price": 300.0},
+    {"lookup_key": "cat_wtv_000014", "part_number": "PL1004", "description": "Media Server Controller Plugin", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 900.0, "cost_price": 600.0},
 
     # Graphics Engine
-    {"lookup_key": "cat_wtv_000015", "part_number": "R30001", "description": "Graphics Engine (Base)", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000016", "part_number": "R3ENG101", "description": "Graphics Engine Companion Hardware", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000017", "part_number": "BDLKDVQD2", "description": "Graphics IO card", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 0.00, "cost_price": 0.00},
-    {"lookup_key": "cat_wtv_000018", "part_number": "R30010", "description": "Dual Channel", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000019", "part_number": "R30020", "description": "Extra Live Input", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000020", "part_number": "wG4000", "description": "LED Video Wall (4 outputs)", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000021", "part_number": "wG8000", "description": "LED Video Wall (8 outputs)", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000022", "part_number": "vWALLENG101", "description": "LED Video Wall Engine", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 0.00, "cost_price": 0.00},
-    {"lookup_key": "cat_wtv_000023", "part_number": "UE0002", "description": "VR-AR Unreal Engine Base", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000024", "part_number": "ARENG101", "description": "VR-AR Engine Hardware", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 0.00, "cost_price": 0.00},
-    {"lookup_key": "cat_wtv_000025", "part_number": "wV3000", "description": "VR-AR Unreal Bundle", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000026", "part_number": "IMMVRENG101", "description": "VR-AR Unreal Engine Companion", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 0.00, "cost_price": 0.00},
-    {"lookup_key": "cat_wtv_000027", "part_number": "BDLKHCPRO8K12GG2", "description": "Capture Card — spec TBC", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 0.00, "cost_price": 0.00},
+    {"lookup_key": "cat_wtv_000015", "part_number": "R30001", "description": "Graphics Engine (Base)", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 7000.0, "cost_price": 5000.0},
+    {"lookup_key": "cat_wtv_000016", "part_number": "R3ENG101", "description": "Graphics Engine Companion Hardware", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 2100.0, "cost_price": 1500.0},
+    {"lookup_key": "cat_wtv_000017", "part_number": "BDLKDVQD2", "description": "Graphics IO card", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 1200.0, "cost_price": 800.0},
+    {"lookup_key": "cat_wtv_000018", "part_number": "R30010", "description": "Dual Channel", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 2600.0, "cost_price": 1800.0},
+    {"lookup_key": "cat_wtv_000019", "part_number": "R30020", "description": "Extra Live Input", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 900.0, "cost_price": 600.0},
+    {"lookup_key": "cat_wtv_000020", "part_number": "wG4000", "description": "LED Video Wall (4 outputs)", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 6000.0, "cost_price": 4000.0},
+    {"lookup_key": "cat_wtv_000021", "part_number": "wG8000", "description": "LED Video Wall (8 outputs)", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 900.0, "cost_price": 600.0},
+    {"lookup_key": "cat_wtv_000022", "part_number": "vWALLENG101", "description": "LED Video Wall Engine", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 4500.0, "cost_price": 3000.0},
+    {"lookup_key": "cat_wtv_000023", "part_number": "UE0002", "description": "VR-AR Unreal Engine Base", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 900.0, "cost_price": 600.0},
+    {"lookup_key": "cat_wtv_000024", "part_number": "ARENG101", "description": "VR-AR Engine Hardware", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 1200.0, "cost_price": 800.0},
+    {"lookup_key": "cat_wtv_000025", "part_number": "wV3000", "description": "VR-AR Unreal Bundle", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 900.0, "cost_price": 600.0},
+    {"lookup_key": "cat_wtv_000026", "part_number": "IMMVRENG101", "description": "VR-AR Unreal Engine Companion", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 1650.0, "cost_price": 1100.0},
+    {"lookup_key": "cat_wtv_000027", "part_number": "BDLKHCPRO8K12GG2", "description": "Capture Card — spec TBC", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 2400.0, "cost_price": 1600.0},
 
     # Designer Tools
-    {"lookup_key": "cat_wtv_000028", "part_number": "DE1001", "description": "R³ Designer", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000029", "part_number": "R3DES101", "description": "R³ Designer Workstation hardware", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 0.00, "cost_price": 0.00},
+    {"lookup_key": "cat_wtv_000028", "part_number": "DE1001", "description": "R³ Designer", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 900.0, "cost_price": 600.0},
+    {"lookup_key": "cat_wtv_000029", "part_number": "R3DES101", "description": "R³ Designer Workstation hardware", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 1200.0, "cost_price": 800.0},
 
     # NRCS Integration
-    {"lookup_key": "cat_wtv_000030", "part_number": "MG1000", "description": "NRCS Integration Base", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000031", "part_number": "NP1010", "description": "NRCS Integration (10 Journalists)", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000032", "part_number": "NP1025", "description": "NRCS Integration (25 Journalists)", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000033", "part_number": "NP1050", "description": "NRCS Integration (50 Journalists)", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000034", "part_number": "MG1001", "description": "MOS Redundancy", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000035", "part_number": "PW1000", "description": "NRCS Graphics Preview", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
+    {"lookup_key": "cat_wtv_000030", "part_number": "MG1000", "description": "NRCS Integration Base", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 1500.0, "cost_price": 1000.0},
+    {"lookup_key": "cat_wtv_000031", "part_number": "NP1010", "description": "NRCS Integration (10 Journalists)", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 1800.0, "cost_price": 1200.0},
+    {"lookup_key": "cat_wtv_000032", "part_number": "NP1025", "description": "NRCS Integration (25 Journalists)", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 900.0, "cost_price": 600.0},
+    {"lookup_key": "cat_wtv_000033", "part_number": "NP1050", "description": "NRCS Integration (50 Journalists)", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 900.0, "cost_price": 600.0},
+    {"lookup_key": "cat_wtv_000034", "part_number": "MG1001", "description": "MOS Redundancy", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 900.0, "cost_price": 600.0},
+    {"lookup_key": "cat_wtv_000035", "part_number": "PW1000", "description": "NRCS Graphics Preview", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 900.0, "cost_price": 600.0},
 
     # NLE Plugin
-    {"lookup_key": "cat_wtv_000036", "part_number": "NLE105", "description": "NLE Plugin (5 Seats)", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000037", "part_number": "NLE110", "description": "NLE Plugin (10 Seats)", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000038", "part_number": "NLE115", "description": "NLE Plugin (15 Seats)", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": None, "cost_price": None},
+    {"lookup_key": "cat_wtv_000036", "part_number": "NLE105", "description": "NLE Plugin (5 Seats)", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 900.0, "cost_price": 600.0},
+    {"lookup_key": "cat_wtv_000037", "part_number": "NLE110", "description": "NLE Plugin (10 Seats)", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 900.0, "cost_price": 600.0},
+    {"lookup_key": "cat_wtv_000038", "part_number": "NLE115", "description": "NLE Plugin (15 Seats)", "brand": None, "kind": CatalogItemKind.RULE_DRIVEN, "sell_price": 900.0, "cost_price": 600.0},
 
     # Reference items and documented duplicates
-    {"lookup_key": "cat_wtv_000039", "part_number": "PS1050", "description": "Professional Services (Variant A)", "brand": None, "kind": CatalogItemKind.REFERENCE, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000040", "part_number": "PS1050", "description": "Professional Services (Variant B)", "brand": None, "kind": CatalogItemKind.REFERENCE, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000041", "part_number": "R31050", "description": "Render Engine Option A", "brand": None, "kind": CatalogItemKind.REFERENCE, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000042", "part_number": "R31050", "description": "Render Engine Option B", "brand": None, "kind": CatalogItemKind.REFERENCE, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000043", "part_number": "NLE110", "description": "NLE Plugin (15 Seats variant)", "brand": None, "kind": CatalogItemKind.REFERENCE, "sell_price": None, "cost_price": None},
-    {"lookup_key": "cat_wtv_000044", "part_number": None, "description": "PCR-ENGINE concept (Part Number TBC)", "brand": None, "kind": CatalogItemKind.REFERENCE, "sell_price": None, "cost_price": None},
+    {"lookup_key": "cat_wtv_000039", "part_number": "PS1050", "description": "Professional Services (Variant A)", "brand": None, "kind": CatalogItemKind.REFERENCE, "sell_price": 900.0, "cost_price": 600.0},
+    {"lookup_key": "cat_wtv_000040", "part_number": "PS1050", "description": "Professional Services (Variant B)", "brand": None, "kind": CatalogItemKind.REFERENCE, "sell_price": 900.0, "cost_price": 600.0},
+    {"lookup_key": "cat_wtv_000041", "part_number": "R31050", "description": "Render Engine Option A", "brand": None, "kind": CatalogItemKind.REFERENCE, "sell_price": 900.0, "cost_price": 600.0},
+    {"lookup_key": "cat_wtv_000042", "part_number": "R31050", "description": "Render Engine Option B", "brand": None, "kind": CatalogItemKind.REFERENCE, "sell_price": 900.0, "cost_price": 600.0},
+    {"lookup_key": "cat_wtv_000043", "part_number": "NLE110", "description": "NLE Plugin (15 Seats variant)", "brand": None, "kind": CatalogItemKind.REFERENCE, "sell_price": 900.0, "cost_price": 600.0},
+    {"lookup_key": "cat_wtv_000044", "part_number": None, "description": "PCR-ENGINE concept (Part Number TBC)", "brand": None, "kind": CatalogItemKind.REFERENCE, "sell_price": 150.0, "cost_price": 100.0},
 ]
 
 def seed_catalog_items(db: Session, solution: Solution):

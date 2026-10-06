@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getQuotes } from '../api/quoteApi';
+import { regionApi } from '../api/regionApi';
 import PageHeader from '../components/common/PageHeader';
 import StatusBadge from '../components/common/StatusBadge';
 import '../styles/quotes.css';
@@ -7,29 +9,38 @@ import '../styles/quotes.css';
 const LIMIT = 10;
 
 export default function QuoteListPage() {
+  const navigate = useNavigate();
   const [quotes, setQuotes] = useState([]);
+  const [regions, setRegions] = useState([]);
   const [skip, setSkip] = useState(0);
   const [clientName, setClientName] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const fetchQuotes = useCallback(async () => {
+  const fetchQuotesAndRegions = useCallback(async () => {
     setIsLoading(true);
     setError('');
     try {
-      const data = await getQuotes({ skip, limit: LIMIT, clientName });
-      setQuotes(data);
+      const [quotesData, regionsData] = await Promise.all([
+        getQuotes({ skip, limit: LIMIT, clientName }),
+        regionApi.getRegions().catch(e => {
+          console.warn("Failed to get regions:", e);
+          return [];
+        })
+      ]);
+      setQuotes(quotesData);
+      setRegions(regionsData);
     } catch (err) {
-      setError(err.message || 'Failed to fetch quotes.');
+      setError(err.message || 'Failed to fetch data.');
     } finally {
       setIsLoading(false);
     }
   }, [skip, clientName]);
 
   useEffect(() => {
-    fetchQuotes();
-  }, [fetchQuotes]);
+    fetchQuotesAndRegions();
+  }, [fetchQuotesAndRegions]);
 
   const handleSearchSubmit = (e) => {
     e.preventDefault();
@@ -54,11 +65,24 @@ export default function QuoteListPage() {
     });
   };
 
+  const getRegionName = (regionId) => {
+    const region = regions.find((r) => r.id === regionId);
+    return region ? region.country_name : regionId;
+  };
+
   return (
     <div className="quotes-container">
       <PageHeader
         title="Quotes"
         subtitle="Manage and view generated customer quotes."
+        actions={
+          <button
+            className="btn btn-primary"
+            onClick={() => navigate('/quotes/new')}
+          >
+            New Quote
+          </button>
+        }
       />
 
       <div className="card quotes-toolbar">
@@ -119,13 +143,18 @@ export default function QuoteListPage() {
             ) : (
               quotes.map((quote) => (
                 <tr key={quote.id}>
-                  <td className="font-medium text-gray-900">{quote.quote_reference || `QT-${quote.id}`}</td>
+                  <td className="font-medium text-gray-900">{quote.quote_ref_no || `QT-${quote.id}`}</td>
                   <td>{quote.client_name}</td>
-                  <td>{quote.region_id}</td>
+                  <td>{getRegionName(quote.region_id)}</td>
                   <td>{formatDate(quote.created_at)}</td>
                   <td><StatusBadge status={quote.status} /></td>
                   <td className="text-right">
-                    <button className="btn-link">View Details</button>
+                    <button
+                      className="btn-link"
+                      onClick={() => navigate(`/quotes/${quote.id}`)}
+                    >
+                      View Details
+                    </button>
                   </td>
                 </tr>
               ))

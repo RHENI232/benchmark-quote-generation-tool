@@ -116,10 +116,9 @@ def test_concurrency_version_mismatch_409(client, admin_user, base_payload, db):
     correct_version = resp.json()["version"]
 
     stale_version = correct_version - 1
-    update_payload = {
-        "client_name": "Conflict Name",
-        "expected_version": stale_version
-    }
+    update_payload = base_payload.copy()
+    update_payload["client_name"] = "Conflict Name"
+    update_payload["expected_version"] = stale_version
 
     put_resp = client.put(f"/api/quotes/{quote_id}", json=update_payload, headers=headers)
     assert put_resp.status_code == 409
@@ -181,17 +180,18 @@ def test_update_quote_headers(client, admin_user, base_payload):
     quote_id = resp.json()["id"]
     version = resp.json()["version"]
 
-    update_payload = {
-        "client_name": "Updated Client",
-        "description": "Updated Description",
-        "expected_version": version
-    }
+    update_payload = base_payload.copy()
+    update_payload["client_name"] = "Updated Client"
+    update_payload["description"] = "Updated Description"
+    update_payload["expected_version"] = version
+
     put_resp = client.put(f"/api/quotes/{quote_id}", json=update_payload, headers=headers)
     assert put_resp.status_code == 200
     data = put_resp.json()
     assert data["client_name"] == "Updated Client"
     assert data["description"] == "Updated Description"
     assert data["version"] == version + 1
+    assert data["status"] == "draft"
 
 def test_recalculate_quote(client, admin_user, base_payload):
     headers = get_auth_headers(admin_user.id)
@@ -625,3 +625,39 @@ def test_cp6_export_xlsx_valid_file(client, admin_user, base_payload):
         # Must be loadable as a valid Excel workbook
         wb = load_workbook(BytesIO(resp.content))
         assert len(wb.sheetnames) >= 1
+
+def test_dashboard_lists_drafts(client, admin_user, base_payload, db):
+    headers = get_auth_headers(admin_user.id)
+    # 1. Create a draft quote
+    resp = client.post("/api/quotes", json=base_payload, headers=headers)
+    assert resp.status_code == 201
+    quote_id = resp.json()["id"]
+
+    # 2. Check dashboard (list quotes)
+    list_resp = client.get("/api/quotes?limit=10", headers=headers)
+    assert list_resp.status_code == 200
+    quotes = list_resp.json()
+
+    # Prove the draft quote appears
+    found = next((q for q in quotes if q["id"] == quote_id), None)
+    assert found is not None
+    assert found["status"] == "draft"
+
+def test_save_final_transitions_to_saved(client, admin_user, base_payload, db):
+    headers = get_auth_headers(admin_user.id)
+    # 1. Create a draft quote
+    resp = client.post("/api/quotes", json=base_payload, headers=headers)
+    quote_id = resp.json()["id"]
+    version = resp.json()["version"]
+
+    # 2. Call Save to finalize
+    save_payload = {"expected_version": version}
+    save_resp = client.post(f"/api/quotes/{quote_id}/save", json=save_payload, headers=headers)
+    assert save_resp.status_code == 200
+    assert save_resp.json()["status"] == "saved"
+
+    # 3. Check dashboard (list quotes)
+    list_resp = client.get("/api/quotes?limit=10", headers=headers)
+    found = next((q for q in list_resp.json() if q["id"] == quote_id), None)
+    assert found is not None
+    assert found["status"] == "saved"

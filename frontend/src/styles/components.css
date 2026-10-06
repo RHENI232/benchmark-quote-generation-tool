@@ -24,10 +24,12 @@
 .btn-primary {
   background-color: var(--color-brand-600);
   color: var(--color-white);
+  box-shadow: var(--shadow-sm);
 }
 
 .btn-primary:hover:not(:disabled) {
   background-color: var(--color-brand-800);
+  box-shadow: var(--shadow-md);
 }
 
 .btn-secondary {

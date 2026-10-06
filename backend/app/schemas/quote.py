@@ -21,8 +21,7 @@ class QuoteRecalculate(BaseModel):
     requirement_data: Dict[str, Any]
     expected_version: int
 
-class QuoteUpdateHeaders(QuoteBase):
-    client_name: Optional[str] = None
+class QuoteUpdate(QuoteCreate):
     expected_version: int
 
 class QuoteSaveAction(BaseModel):
@@ -97,4 +96,3 @@ class QuoteSummary(BaseModel):
     created_by_user_id: int
 
     model_config = ConfigDict(from_attributes=True)
-

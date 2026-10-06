@@ -1,0 +1,262 @@
+/* Wizard Shell Styles */
+.quote-wizard-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.wizard-progress-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: var(--color-white);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--border-radius-md);
+  padding: 1.5rem 2rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--shadow-sm);
+}
+
+.wizard-step {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  position: relative;
+  flex: 1;
+}
+
+.wizard-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 3rem;
+  right: -1rem;
+  height: 2px;
+  background-color: var(--color-gray-200);
+  transform: translateY(-50%);
+  z-index: 1;
+}
+
+.wizard-step.completed:not(:last-child)::after {
+  background-color: var(--color-brand-600);
+}
+
+.step-circle {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  background-color: var(--color-white);
+  border: 2px solid var(--color-gray-300);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  color: var(--color-gray-500);
+  z-index: 2;
+  position: relative;
+}
+
+.step-label {
+  font-weight: 500;
+  color: var(--color-gray-500);
+  z-index: 2;
+  position: relative;
+  background-color: var(--color-white);
+  padding-right: 0.5rem;
+}
+
+/* Active Step Polish */
+.wizard-step.active .step-circle {
+  background-color: var(--color-info-bg);
+  border-color: var(--color-brand-600);
+  color: var(--color-brand-600);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.wizard-step.active .step-label {
+  color: var(--color-gray-900);
+  font-weight: 700;
+  border-bottom: 2px solid var(--color-brand-600);
+  padding-bottom: 0.125rem;
+}
+
+/* Completed Step */
+.wizard-step.completed .step-circle {
+  background-color: var(--color-brand-600);
+  border-color: var(--color-brand-600);
+  color: white;
+}
+
+.wizard-step.completed .step-label {
+  color: var(--color-gray-900);
+}
+
+.wizard-content {
+  min-height: 400px;
+}
+
+/* Setup Form Specific */
+.setup-step-card {
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--color-gray-200);
+  background-color: var(--color-white);
+  border-radius: var(--border-radius-md);
+  padding: 0;
+}
+
+.card-header {
+  border-bottom: 1px solid var(--color-gray-200);
+  padding: 1.25rem 1.5rem;
+  background-color: var(--color-gray-50);
+  border-top-left-radius: var(--border-radius-md);
+  border-top-right-radius: var(--border-radius-md);
+}
+
+.card-body {
+  padding: 1.5rem;
+}
+
+.card-title {
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: var(--color-brand-900);
+}
+
+.setup-form .form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+
+.setup-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  border-top: 1px solid var(--color-gray-200);
+  padding-top: 1.5rem;
+  margin-top: 1rem;
+}
+
+/* Requirements Form Specific */
+.requirement-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.section-title {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--color-gray-900);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+}
+
+.section-divider {
+  border: 0;
+  height: 1px;
+  background-color: var(--color-gray-200);
+  margin: 1.5rem 0;
+}
+
+.checkbox-group {
+  margin-bottom: 0;
+}
+
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.form-checkbox {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--color-brand-600);
+  cursor: pointer;
+}
+
+.checkbox-text {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--color-gray-800);
+}
+
+.input-error {
+  border-color: #fca5a5;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+.input-error:focus {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+}
+
+/* Helpers */
+.mt-3 { margin-top: 0.75rem; }
+.mt-6 { margin-top: 1.5rem; }
+.mr-3 { margin-right: 0.75rem; }
+.pt-6 { padding-top: 1.5rem; }
+.empty-label { display: block; }
+
+/* Quotation Presentation Styles */
+.quotation-header h2 {
+  letter-spacing: 0.05em;
+  color: var(--color-brand-900) !important;
+}
+
+.quotation-header h4 {
+  letter-spacing: 0.1em;
+}
+
+.quotation-table th {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.quotation-table td {
+  vertical-align: middle;
+}
+
+.quotation-table tr.bg-light td {
+  background-color: var(--color-gray-50) !important;
+  border-top: 2px solid var(--color-gray-200);
+}
+
+@media (max-width: 768px) {
+  .wizard-progress-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .wizard-step:not(:last-child)::after {
+    display: none;
+  }
+
+  .setup-form .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .quotation-header .d-flex {
+    flex-direction: column;
+    gap: 1rem !important;
+  }
+
+  .quotation-header .border-start {
+    border-left: none !important;
+    padding-left: 0 !important;
+  }
+}

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { Link } from 'react-router-dom';
 import { getQuotes } from '../api/quoteApi';
+import { regionApi } from '../api/regionApi';
 import PageHeader from '../components/common/PageHeader';
 import StatusBadge from '../components/common/StatusBadge';
 import '../styles/dashboard.css';
@@ -9,20 +10,31 @@ import '../styles/dashboard.css';
 export default function DashboardPage() {
   const { user } = useAuth();
   const [recentQuotes, setRecentQuotes] = useState([]);
+  const [regions, setRegions] = useState({});
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchRecent() {
+    async function fetchData() {
       try {
-        const data = await getQuotes({ skip: 0, limit: 5 });
-        setRecentQuotes(data);
+        const [quotesData, regionsData] = await Promise.all([
+          getQuotes({ skip: 0, limit: 5 }),
+          regionApi.getRegions()
+        ]);
+        setRecentQuotes(quotesData);
+        const regionMap = {};
+        if (regionsData && Array.isArray(regionsData)) {
+          regionsData.forEach(r => {
+            regionMap[r.id] = r.country_name;
+          });
+        }
+        setRegions(regionMap);
       } catch (err) {
-        console.error("Failed to load recent quotes", err);
+        console.error("Failed to load dashboard data", err);
       } finally {
         setIsLoading(false);
       }
     }
-    fetchRecent();
+    fetchData();
   }, []);
 
   const totalQuotes = recentQuotes.length > 0 ? recentQuotes.length + "+" : 0;
@@ -41,6 +53,11 @@ export default function DashboardPage() {
       <PageHeader
         title="Dashboard"
         subtitle="Overview of quotation activity and recent work."
+        actions={
+          <Link to="/quotes/new" className="btn btn-primary">
+            New Quote
+          </Link>
+        }
       />
 
       <div className="dashboard-kpi-grid">
@@ -85,7 +102,7 @@ export default function DashboardPage() {
                   <tr key={quote.id}>
                     <td className="font-medium">{quote.quote_reference || `QT-${quote.id}`}</td>
                     <td>{quote.client_name}</td>
-                    <td>{quote.region_id}</td>
+                    <td>{regions[quote.region_id] || quote.region_id}</td>
                     <td>{formatDate(quote.created_at)}</td>
                     <td><StatusBadge status={quote.status} /></td>
                   </tr>

@@ -41,7 +41,13 @@ export async function fetchClient(endpoint, { body, ...customConfig } = {}) {
     let errorMsg = 'An error occurred';
     try {
       const errorData = await response.json();
-      errorMsg = errorData.detail || errorMsg;
+      if (errorData.detail) {
+        if (Array.isArray(errorData.detail)) {
+          errorMsg = JSON.stringify(errorData.detail);
+        } else {
+          errorMsg = errorData.detail;
+        }
+      }
     } catch (e) {
       // Failed to parse JSON error
     }

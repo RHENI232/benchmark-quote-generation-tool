@@ -16,8 +16,9 @@ export default function AppLayout({ children }) {
     <div className="app-container">
       <header className="app-header">
         <div className="app-title">
-          <span className="brand-name">Benchmark</span>
-          <span className="app-name">Presales Tool</span>
+          <a href="https://benchmarkbroadcast.com/" target="_blank" rel="noopener noreferrer" className="brand-logo-link">
+            <img src="/assets/logo.webp" alt="Benchmark Broadcast Systems" className="brand-logo" />
+          </a>
         </div>
         <div className="app-user-controls">
           <div className="user-info">
