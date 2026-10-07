@@ -1,10 +1,10 @@
 import React from 'react';
 import { NavLink, useNavigate, Outlet } from 'react-router-dom';
-import { useAuth } from '../../auth/AuthContext';
+import { useAuth, PERMISSIONS } from '../../auth/AuthContext';
 import '../../styles/layout.css';
 
 export default function AppLayout({ children }) {
-  const { user, logout } = useAuth();
+  const { user, logout, hasPermission } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -42,6 +42,13 @@ export default function AppLayout({ children }) {
                   Quotes
                 </NavLink>
               </li>
+              {hasPermission(PERMISSIONS.SUPER_ADMIN) && (
+                <li>
+                  <NavLink to="/users" className={({ isActive }) => (isActive ? 'active' : '')}>
+                    Users
+                  </NavLink>
+                </li>
+              )}
             </ul>
           </nav>
         </aside>
