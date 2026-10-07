@@ -248,185 +248,177 @@ export default function QuotePreviewStep({ draftQuote, onBack }) {
   return (
     <div className="preview-step-container">
       {/* PROFESSIONAL HEADER */}
-      <div className="quotation-header text-center mb-5">
-        <h2 className="text-uppercase fw-bold text-dark mb-1">Benchmark Broadcast Systems</h2>
-        <h4 className="text-muted fw-light mb-4">PRESALES QUOTATION</h4>
+      <div className="preview-header">
+        <h2 className="preview-title">Quote Preview</h2>
+        <p className="preview-subtitle">Review the complete quotation before saving.</p>
+      </div>
 
-        <div className="d-flex justify-content-center align-items-center gap-4">
-          <div>
-            <div className="text-muted small text-uppercase">Quote Reference</div>
-            <div className="fs-5 fw-bold text-dark">{previewData.quote_ref_no || 'PREVIEW'}</div>
+      {/* QUOTE META HEADER */}
+      <div className="quote-meta-header">
+        <div className="meta-item">
+          <div className="meta-label">Quote #</div>
+          <div className="meta-value">{previewData.quote_ref_no || 'PREVIEW'}</div>
+        </div>
+        <div className="meta-item">
+          <div className="meta-label">Status</div>
+          <div className="meta-value">
+            <span className={`badge ${previewData.status === 'SAVED' ? 'badge-success' : (previewData.status === 'DRAFT' ? 'badge-warning' : 'badge-neutral')}`}>
+              {previewData.status ? previewData.status.toUpperCase() : 'PREVIEW'}
+            </span>
           </div>
-          <div className="border-start ps-4">
-            <div className="text-muted small text-uppercase">Status</div>
-            <div className="fs-5 fw-bold text-primary">PREVIEW</div>
-          </div>
-          {previewData.date && (
-            <div className="border-start ps-4">
-              <div className="text-muted small text-uppercase">Date</div>
-              <div className="fs-5 fw-bold text-dark">{new Date(previewData.date).toLocaleDateString()}</div>
-            </div>
-          )}
+        </div>
+        <div className="meta-item">
+          <div className="meta-label">Date</div>
+          <div className="meta-value">{previewData.date ? new Date(previewData.date).toLocaleDateString() : new Date().toLocaleDateString()}</div>
         </div>
       </div>
 
       {/* CUSTOMER & QUOTE INFO */}
-      <div className="row mb-5">
-        <div className="col-md-6">
-          <div className="card h-100 border-0 shadow-sm">
-            <div className="card-header bg-white border-bottom-0 pt-4 pb-0">
-              <h6 className="text-uppercase text-muted fw-bold mb-0">Customer</h6>
-            </div>
-            <div className="card-body">
-              <div className="fs-5 fw-bold mb-2">{previewData.client_name}</div>
-              {previewData.attention && <div className="mb-1 text-dark"><strong>Attn:</strong> {previewData.attention}</div>}
-              {previewData.description && <div className="text-muted small">{previewData.description}</div>}
-            </div>
-          </div>
+      <div className="info-panels">
+        <div className="info-panel">
+          <h3 className="section-title">Customer Information</h3>
+          <dl className="info-list">
+            <dt>Customer</dt>
+            <dd>{previewData.client_name}</dd>
+            {previewData.attention && (
+              <>
+                <dt>Attention</dt>
+                <dd>{previewData.attention}</dd>
+              </>
+            )}
+            {previewData.description && (
+              <>
+                <dt>Description</dt>
+                <dd className="text-sm">{previewData.description}</dd>
+              </>
+            )}
+          </dl>
         </div>
-        <div className="col-md-6 mt-4 mt-md-0">
-          <div className="card h-100 border-0 shadow-sm">
-            <div className="card-header bg-white border-bottom-0 pt-4 pb-0">
-              <h6 className="text-uppercase text-muted fw-bold mb-0">Quote Details</h6>
-            </div>
-            <div className="card-body">
-              <table className="table table-sm table-borderless mb-0">
-                <tbody>
-                  <tr>
-                    <td className="text-muted ps-0 py-1" style={{ width: '40%' }}>Region</td>
-                    <td className="fw-medium text-dark py-1">{getRegionName(previewData.region_id)}</td>
-                  </tr>
-                  <tr>
-                    <td className="text-muted ps-0 py-1">Solution</td>
-                    <td className="fw-medium text-dark py-1">{getSolutionName(previewData.solution_id)}</td>
-                  </tr>
-                  <tr>
-                    <td className="text-muted ps-0 py-1">Currency</td>
-                    <td className="fw-medium text-dark py-1">{previewData.currency_code}</td>
-                  </tr>
-                  <tr>
-                    <td className="text-muted ps-0 py-1">FX Rate (to USD)</td>
-                    <td className="fw-medium text-dark py-1">{parseFloat(previewData.fx_rate_to_usd).toFixed(4)}</td>
-                  </tr>
-                  <tr>
-                    <td className="text-muted ps-0 py-1">Tax Enabled</td>
-                    <td className="fw-medium text-dark py-1">{previewData.tax_enabled ? `Yes (${parseFloat(previewData.tax_rate_percent)}%)` : 'No'}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+        <div className="info-panel">
+          <h3 className="section-title">Quote Details</h3>
+          <dl className="info-list">
+            <dt>Region</dt>
+            <dd>{getRegionName(previewData.region_id)}</dd>
+            <dt>Solution</dt>
+            <dd>{getSolutionName(previewData.solution_id)}</dd>
+            <dt>Currency</dt>
+            <dd>{previewData.currency_code}</dd>
+            <dt>FX Rate</dt>
+            <dd>{parseFloat(previewData.fx_rate_to_usd).toFixed(4)}</dd>
+            <dt>Tax</dt>
+            <dd>{previewData.tax_enabled ? `Yes (${parseFloat(previewData.tax_rate_percent)}%)` : 'No'}</dd>
+          </dl>
         </div>
       </div>
 
       {/* LINE ITEMS */}
-      <div className="mb-5">
-        <h5 className="text-uppercase text-muted fw-bold mb-3 px-2">Line Items</h5>
-        <div className="card border-0 shadow-sm overflow-hidden">
-          <div className="table-responsive">
-            <table className="table table-hover mb-0 align-middle quotation-table">
-              <thead className="table-light text-uppercase small text-muted">
-                <tr>
-                  <th className="ps-4" style={{width: '5%'}}>#</th>
-                  <th style={{width: '15%'}}>Part Number</th>
-                  <th style={{width: '30%'}}>Description</th>
-                  <th className="text-center" style={{width: '5%'}}>Qty</th>
-                  {hasCostData && <th className="text-end" style={{width: '12%'}}>Unit Cost</th>}
-                  <th className="text-end" style={{width: '12%'}}>Unit Sell</th>
-                  {hasCostData && <th className="text-end" style={{width: '8%'}}>Margin</th>}
-                  <th className="text-end pe-4" style={{width: '13%'}}>Total Sell</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sections.length > 0 ? (
-                  sections.map((sectionName) => (
-                    <React.Fragment key={sectionName}>
-                      {/* Section Header Row */}
-                      <tr className="bg-light">
-                        <td colSpan={hasCostData ? 8 : 6} className="fw-bold text-dark ps-4 py-3">
-                          {sectionName}
+      <div className="boq-section">
+        <div className="boq-header">
+          <h3 className="section-title">Bill of Quantities</h3>
+          <p className="form-help">Quoted equipment, software and services</p>
+        </div>
+        <div className="table-container">
+          <table className="data-table boq-table">
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'center', width: '5%' }}>#</th>
+                <th style={{ width: '15%' }}>Part Number</th>
+                <th style={{ width: '30%' }}>Description</th>
+                <th style={{ textAlign: 'center', width: '5%' }}>Qty</th>
+                {hasCostData && <th className="text-right" style={{ width: '12%' }}>Unit Cost</th>}
+                <th className="text-right" style={{ width: '12%' }}>Unit Sell</th>
+                {hasCostData && <th className="text-right" style={{ width: '8%' }}>Margin</th>}
+                <th className="text-right" style={{ width: '13%' }}>Total Sell</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sections.length > 0 ? (
+                sections.map((sectionName) => (
+                  <React.Fragment key={sectionName}>
+                    {/* Section Header Row */}
+                    <tr className="section-row">
+                      <td colSpan={hasCostData ? 8 : 6}>
+                        {sectionName}
+                      </td>
+                    </tr>
+                    {/* Section Items */}
+                    {groupedLineItems[sectionName].map((item, idx) => (
+                      <tr key={`${sectionName}-${idx}`}>
+                        <td style={{ textAlign: 'center' }} className="text-gray-500 text-sm">{item.sort_order}</td>
+                        <td>
+                          <div className="font-medium text-gray-900">{item.part_number || 'Custom'}</div>
+                          {item.brand && <div className="text-xs text-gray-500">{item.brand}</div>}
                         </td>
+                        <td>
+                          <div className="text-sm text-gray-900">{item.description}</div>
+                        </td>
+                        <td style={{ textAlign: 'center' }} className="font-medium">{item.quantity}</td>
+                        {hasCostData && <td className="text-right text-sm text-gray-500">{formatUsd(item.unit_cost_price_snapshot)}</td>}
+                        <td className="text-right text-sm">{formatUsd(item.unit_sell_price_snapshot)}</td>
+                        {hasCostData && <td className="text-right text-sm">{formatPercent(item.margin_percent)}</td>}
+                        <td className="text-right font-medium text-gray-900">{formatUsd(item.line_sell_total)}</td>
                       </tr>
-                      {/* Section Items */}
-                      {groupedLineItems[sectionName].map((item, idx) => (
-                        <tr key={`${sectionName}-${idx}`}>
-                          <td className="ps-4 text-muted small">{item.sort_order}</td>
-                          <td>
-                            <div className="fw-medium text-dark">{item.part_number || 'Custom'}</div>
-                            {item.brand && <div className="small text-muted">{item.brand}</div>}
-                          </td>
-                          <td>
-                            <div className="text-dark small lh-sm">{item.description}</div>
-                          </td>
-                          <td className="text-center fw-medium">{item.quantity}</td>
-                          {hasCostData && <td className="text-end text-muted small">{formatUsd(item.unit_cost_price_snapshot)}</td>}
-                          <td className="text-end small">{formatUsd(item.unit_sell_price_snapshot)}</td>
-                          {hasCostData && <td className="text-end small">{formatPercent(item.margin_percent)}</td>}
-                          <td className="text-end pe-4 fw-medium text-dark">{formatUsd(item.line_sell_total)}</td>
-                        </tr>
-                      ))}
-                    </React.Fragment>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={hasCostData ? 8 : 6} className="text-center py-5 text-muted">
-                      No line items generated for these requirements.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                    ))}
+                  </React.Fragment>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={hasCostData ? 8 : 6} style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+                    <div className="text-gray-500">No line items generated</div>
+                    <div className="text-sm text-gray-500 mt-3">The current requirements did not produce any billable items.</div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
       {/* PRICING SUMMARY */}
-      <div className="row justify-content-end mb-5">
-        <div className="col-lg-5 col-md-7">
-          <div className="card border-0 shadow-sm bg-light">
-            <div className="card-body p-4">
-              <h5 className="text-uppercase text-muted fw-bold border-bottom pb-3 mb-3">Pricing Summary</h5>
-              <table className="table table-borderless table-sm mb-0">
-                <tbody>
-                  {hasCostData && (
-                    <tr>
-                      <td className="text-muted ps-0">Total Cost (USD)</td>
-                      <td className="text-end pe-0 fw-medium text-dark">{formatUsd(previewData.subtotal_cost_usd)}</td>
-                    </tr>
-                  )}
-                  <tr>
-                    <td className="text-muted ps-0">Subtotal Sell (USD)</td>
-                    <td className="text-end pe-0 fw-medium text-dark">{formatUsd(previewData.subtotal_sell_usd)}</td>
-                  </tr>
-                  <tr>
-                    <td className="text-muted ps-0 border-bottom pb-3">Tax Amount ({previewData.currency_code})</td>
-                    <td className="text-end pe-0 fw-medium text-dark border-bottom pb-3">{formatMoney(previewData.tax_amount)}</td>
-                  </tr>
-                  <tr>
-                    <td className="ps-0 pt-3 fs-5 fw-bold text-dark">TOTAL SELL</td>
-                    <td className="text-end pe-0 pt-3 fs-4 fw-bold text-primary">{formatMoney(previewData.total_sell_local)}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
+      <div className="financial-summary-section">
+        <div className="financial-summary-card">
+          <h3 className="section-title">Pricing Summary</h3>
+          <table className="financial-table">
+            <tbody>
+              {hasCostData && (
+                <tr>
+                  <td>Total Cost (USD)</td>
+                  <td className="text-right font-medium text-gray-900">{formatUsd(previewData.subtotal_cost_usd)}</td>
+                </tr>
+              )}
+              <tr>
+                <td>Subtotal Sell (USD)</td>
+                <td className="text-right font-medium text-gray-900">{formatUsd(previewData.subtotal_sell_usd)}</td>
+              </tr>
+              <tr>
+                <td>Tax Amount ({previewData.currency_code})</td>
+                <td className="text-right font-medium text-gray-900">{formatMoney(previewData.tax_amount)}</td>
+              </tr>
+              <tr className="total-row">
+                <td className="font-bold text-lg">TOTAL SELL</td>
+                <td className="text-right font-bold text-2xl total-value">{formatMoney(previewData.total_sell_local)}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
       {/* BUTTON AREA */}
-      <div className="d-flex flex-column flex-md-row justify-content-between align-items-center mt-5 pt-4 border-top gap-3">
-        <button
-          type="button"
-          className="btn btn-outline-secondary btn-lg order-2 order-md-1 px-4"
-          onClick={onBack}
-          disabled={isSaving}
-        >
-          &larr; Back to Studios
-        </button>
-        <div className="d-flex gap-3 w-100 w-md-auto justify-content-end order-1 order-md-2">
+      <div className="preview-actions">
+        <div className="action-left">
           <button
             type="button"
-            className="btn btn-secondary btn-lg flex-grow-1 flex-md-grow-0 px-4"
+            className="btn btn-secondary btn-lg"
+            onClick={onBack}
+            disabled={isSaving}
+          >
+            Back to Studios
+          </button>
+        </div>
+        <div className="action-right">
+          <button
+            type="button"
+            className="btn btn-secondary btn-lg"
             onClick={handleSaveDraft}
             disabled={isSaving}
           >
@@ -434,7 +426,7 @@ export default function QuotePreviewStep({ draftQuote, onBack }) {
           </button>
           <button
             type="button"
-            className="btn btn-primary btn-lg flex-grow-1 flex-md-grow-0 px-4"
+            className="btn btn-primary btn-lg"
             onClick={handleSaveFinal}
             disabled={isSaving}
           >

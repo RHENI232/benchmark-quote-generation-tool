@@ -20,3 +20,8 @@ build/
 
 # Docker
 *.log
+
+# Local SQLite databases
+*.db
+*.sqlite
+*.sqlite3

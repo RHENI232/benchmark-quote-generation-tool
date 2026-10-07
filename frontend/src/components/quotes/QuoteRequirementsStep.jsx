@@ -95,6 +95,7 @@ export default function QuoteRequirementsStep({ draftQuote, updateDraft, onNext,
           {/* GENERAL REQUIREMENTS */}
           <div className="requirement-section">
             <h3 className="section-title">General Requirements</h3>
+            <p className="form-help mb-4">Core configuration for the overall broadcast facility.</p>
             <div className="form-row">
               <div className="form-group">
                 <label className="form-label" htmlFor="number_of_studios">
@@ -137,6 +138,7 @@ export default function QuoteRequirementsStep({ draftQuote, updateDraft, onNext,
           {/* NEWS PRODUCTION */}
           <div className="requirement-section">
             <h3 className="section-title">News Production</h3>
+            <p className="form-help mb-4">Enable to configure journalism and MOS integration.</p>
             <div className="form-group checkbox-group">
               <label className="checkbox-label">
                 <input
@@ -193,6 +195,7 @@ export default function QuoteRequirementsStep({ draftQuote, updateDraft, onNext,
           {/* GRAPHICS / NLE */}
           <div className="requirement-section">
             <h3 className="section-title">Graphics / NLE</h3>
+            <p className="form-help mb-4">Non-linear editing and newsroom graphics capabilities.</p>
 
             <div className="form-group checkbox-group">
               <label className="checkbox-label">
@@ -250,6 +253,7 @@ export default function QuoteRequirementsStep({ draftQuote, updateDraft, onNext,
           {/* PRODUCTION */}
           <div className="requirement-section">
             <h3 className="section-title">Production</h3>
+            <p className="form-help mb-4">Studio playout and ingest management.</p>
 
             <div className="form-row">
               <div className="form-group checkbox-group">
@@ -319,6 +323,7 @@ export default function QuoteRequirementsStep({ draftQuote, updateDraft, onNext,
           {/* SUPPORT */}
           <div className="requirement-section">
             <h3 className="section-title">Support</h3>
+            <p className="form-help mb-4">Service Level Agreement and maintenance options.</p>
             <div className="form-group checkbox-group">
               <label className="checkbox-label">
                 <input
@@ -333,17 +338,17 @@ export default function QuoteRequirementsStep({ draftQuote, updateDraft, onNext,
             </div>
           </div>
 
-          <div className="form-actions">
+          <div className="form-actions mt-6">
             <button
               type="button"
-              className="btn btn-secondary"
+              className="btn btn-secondary btn-lg"
               onClick={onBack}
             >
               Back
             </button>
             <button
               type="submit"
-              className="btn btn-primary"
+              className="btn btn-primary btn-lg"
             >
               Continue
             </button>

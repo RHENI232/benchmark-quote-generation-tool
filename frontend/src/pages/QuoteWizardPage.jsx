@@ -167,11 +167,6 @@ export default function QuoteWizardPage() {
       <PageHeader
         title={id ? `Edit Quote: ${draftQuote.client_name}` : "Create New Quote"}
         subtitle="Step-by-step presales quotation workflow."
-        actions={
-          <button className="btn btn-secondary" onClick={handleBack}>
-            {currentStep === 1 ? 'Cancel' : 'Back'}
-          </button>
-        }
       />
 
       <div className="wizard-progress-bar">

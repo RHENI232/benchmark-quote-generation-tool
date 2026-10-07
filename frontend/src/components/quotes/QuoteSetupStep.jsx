@@ -97,98 +97,106 @@ export default function QuoteSetupStep({ draftQuote, updateDraft, onNext }) {
       </div>
       <div className="card-body">
         <form onSubmit={handleSubmit} className="setup-form">
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="client_name">
-              Client Name <span className="text-danger">*</span>
-            </label>
-            <input
-              type="text"
-              id="client_name"
-              name="client_name"
-              className="form-input"
-              value={draftQuote.client_name}
-              onChange={handleInputChange}
-              placeholder="e.g. Acme Broadcasting Corp"
-              required
-            />
-            <p className="form-help">The official name of the customer for this quote.</p>
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="attention">Attention (Optional)</label>
-            <input
-              type="text"
-              id="attention"
-              name="attention"
-              className="form-input"
-              value={draftQuote.attention}
-              onChange={handleInputChange}
-              placeholder="e.g. Jane Doe, Procurement Manager"
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label" htmlFor="description">Description (Optional)</label>
-            <textarea
-              id="description"
-              name="description"
-              className="form-input"
-              rows="3"
-              value={draftQuote.description}
-              onChange={handleInputChange}
-              placeholder="Brief summary of the quote..."
-            />
-          </div>
-
-          <div className="form-row">
+          <div className="requirement-section">
+            <h3 className="section-title">Customer Information</h3>
             <div className="form-group">
-              <label className="form-label" htmlFor="region_id">
-                Region <span className="text-danger">*</span>
+              <label className="form-label" htmlFor="client_name">
+                Customer / Company Name <span className="text-danger">*</span>
               </label>
-              <select
-                id="region_id"
-                name="region_id"
-                className="form-select"
-                value={draftQuote.region_id}
+              <input
+                type="text"
+                id="client_name"
+                name="client_name"
+                className="form-input"
+                value={draftQuote.client_name}
                 onChange={handleInputChange}
+                placeholder="e.g. Acme Broadcasting Corp"
                 required
-              >
-                <option value="">-- Select a Region --</option>
-                {regions.map((region) => (
-                  <option key={region.id} value={region.id}>
-                    {region.country_name} ({region.currency_code})
-                  </option>
-                ))}
-              </select>
+              />
             </div>
 
-            <div className="form-group">
-              <label className="form-label" htmlFor="solution_id">
-                Solution <span className="text-danger">*</span>
-              </label>
-              <select
-                id="solution_id"
-                name="solution_id"
-                className="form-select"
-                value={draftQuote.solution_id}
-                onChange={handleInputChange}
-                required
-              >
-                <option value="">-- Select a Solution --</option>
-                {solutions.map((solution) => (
-                  <option key={solution.id} value={solution.id}>
-                    {solution.name}
-                  </option>
-                ))}
-              </select>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label" htmlFor="attention">Attention (Optional)</label>
+                <input
+                  type="text"
+                  id="attention"
+                  name="attention"
+                  className="form-input"
+                  value={draftQuote.attention}
+                  onChange={handleInputChange}
+                  placeholder="e.g. Jane Doe, Procurement Manager"
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="description">Quote Description (Optional)</label>
+                <input
+                  type="text"
+                  id="description"
+                  name="description"
+                  className="form-input"
+                  value={draftQuote.description}
+                  onChange={handleInputChange}
+                  placeholder="Brief summary of the quote..."
+                />
+              </div>
+            </div>
+          </div>
+
+          <hr className="section-divider" />
+
+          <div className="requirement-section">
+            <h3 className="section-title">Quote Configuration</h3>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label" htmlFor="solution_id">
+                  Solution <span className="text-danger">*</span>
+                </label>
+                <select
+                  id="solution_id"
+                  name="solution_id"
+                  className="form-select form-select-lg"
+                  value={draftQuote.solution_id}
+                  onChange={handleInputChange}
+                  required
+                >
+                  <option value="">-- Select a Solution --</option>
+                  {solutions.map((solution) => (
+                    <option key={solution.id} value={solution.id}>
+                      {solution.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="region_id">
+                  Region <span className="text-danger">*</span>
+                </label>
+                <select
+                  id="region_id"
+                  name="region_id"
+                  className="form-select form-select-lg"
+                  value={draftQuote.region_id}
+                  onChange={handleInputChange}
+                  required
+                >
+                  <option value="">-- Select a Region --</option>
+                  {regions.map((region) => (
+                    <option key={region.id} value={region.id}>
+                      {region.country_name} ({region.currency_code})
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
 
           <div className="form-actions mt-6">
             <button
               type="submit"
-              className="btn btn-primary"
+              className="btn btn-primary btn-lg"
               disabled={!isValid}
             >
               Continue
