@@ -7,7 +7,7 @@ from typing import List, Optional
 from datetime import datetime
 import logging
 
-from backend.app.api.deps import get_db, get_current_user
+from backend.app.api.deps import get_db, get_current_user, require_permission, has_permission
 from backend.app.models.quote import Quote, QuoteStatus
 from backend.app.models.user import User, RoleTier
 from backend.app.models.region import Region
@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/quotes")
 
-def mask_quote_financials_for_sales(quote_data: dict, current_user: User) -> dict:
-    if current_user.role_tier == RoleTier.SALES:
+def mask_quote_financials(quote_data: dict, current_user: User) -> dict:
+    if not has_permission("cost_visibility", current_user):
         quote_data["subtotal_cost_usd"] = None
         for item in quote_data.get("line_items", []):
             item["unit_cost_price_snapshot"] = None
@@ -37,7 +37,7 @@ def list_quotes(
     limit: int = 50,
     client_name: Optional[str] = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("sales_user"))
 ):
     if limit > 100:
         limit = 100
@@ -59,7 +59,7 @@ XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.s
 def export_customer_copy(
     quote_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("sales_user"))
 ):
     quote = db.query(Quote).filter(Quote.id == quote_id).first()
     if not quote or quote.deleted_at is not None:
@@ -80,10 +80,8 @@ def export_customer_copy(
 def export_internal_copy(
     quote_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("cost_visibility"))
 ):
-    if current_user.role_tier in (RoleTier.SALES, RoleTier.CATALOG_ENTRY):
-        raise HTTPException(status_code=403, detail="Forbidden: Insufficient permissions")
 
     quote = db.query(Quote).filter(Quote.id == quote_id).first()
     if not quote or quote.deleted_at is not None:
@@ -101,10 +99,8 @@ def export_internal_copy(
 def export_tracking_sheet(
     quote_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("cost_visibility"))
 ):
-    if current_user.role_tier in (RoleTier.SALES, RoleTier.CATALOG_ENTRY):
-        raise HTTPException(status_code=403, detail="Forbidden: Insufficient permissions")
 
     quote = db.query(Quote).filter(Quote.id == quote_id).first()
     if not quote or quote.deleted_at is not None:
@@ -119,7 +115,7 @@ def export_tracking_sheet(
     )
 
 @router.post("/preview", response_model=QuoteResponse)
-def preview_quote(payload: QuoteCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def preview_quote(payload: QuoteCreate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("sales_user"))):
     try:
         region = db.query(Region).filter(Region.id == payload.region_id).first()
         solution = db.query(Solution).filter(Solution.id == payload.solution_id).first()
@@ -150,7 +146,7 @@ def preview_quote(payload: QuoteCreate, db: Session = Depends(get_db), current_u
 
         resp = QuoteResponse.model_validate(quote, from_attributes=True).model_dump()
         db.rollback()
-        return mask_quote_financials_for_sales(resp, current_user)
+        return mask_quote_financials(resp, current_user)
 
     except (RequirementEngineError, PricingEngineError) as e:
         db.rollback()
@@ -167,7 +163,7 @@ def preview_quote(payload: QuoteCreate, db: Session = Depends(get_db), current_u
 def create_quote(
     payload: QuoteCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_permission("sales_user"))
 ):
     try:
         region = db.query(Region).filter(
@@ -232,7 +228,7 @@ def create_quote(
             from_attributes=True
         ).model_dump()
 
-        return mask_quote_financials_for_sales(
+        return mask_quote_financials(
             resp,
             current_user
         )
@@ -274,7 +270,7 @@ def create_quote(
         )
 
 @router.get("/{quote_id}", response_model=QuoteResponse)
-def get_quote(quote_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_quote(quote_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("sales_user"))):
     quote = db.query(Quote).filter(Quote.id == quote_id).first()
     if not quote or quote.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Quote not found")
@@ -283,10 +279,10 @@ def get_quote(quote_id: int, db: Session = Depends(get_db), current_user: User =
         raise HTTPException(status_code=403, detail="Forbidden: You do not own this quote")
 
     resp = QuoteResponse.model_validate(quote, from_attributes=True).model_dump()
-    return mask_quote_financials_for_sales(resp, current_user)
+    return mask_quote_financials(resp, current_user)
 
 @router.put("/{quote_id}", response_model=QuoteResponse)
-def update_quote(quote_id: int, payload: QuoteUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def update_quote(quote_id: int, payload: QuoteUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("sales_user"))):
     try:
         quote = db.query(Quote).filter(Quote.id == quote_id).first()
         if not quote or quote.deleted_at is not None:
@@ -322,7 +318,7 @@ def update_quote(quote_id: int, payload: QuoteUpdate, db: Session = Depends(get_
         db.refresh(quote)
 
         resp = QuoteResponse.model_validate(quote, from_attributes=True).model_dump()
-        return mask_quote_financials_for_sales(resp, current_user)
+        return mask_quote_financials(resp, current_user)
     except (RequirementEngineError, PricingEngineError) as e:
         db.rollback()
         raise HTTPException(status_code=409, detail=str(e))
@@ -335,7 +331,7 @@ def update_quote(quote_id: int, payload: QuoteUpdate, db: Session = Depends(get_
         raise HTTPException(status_code=400, detail="Error updating quote.")
 
 @router.post("/{quote_id}/recalculate", response_model=QuoteResponse)
-def recalculate_quote(quote_id: int, payload: QuoteRecalculate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def recalculate_quote(quote_id: int, payload: QuoteRecalculate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("sales_user"))):
     quote = db.query(Quote).filter(Quote.id == quote_id).first()
     if not quote or quote.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Quote not found")
@@ -359,7 +355,7 @@ def recalculate_quote(quote_id: int, payload: QuoteRecalculate, db: Session = De
         db.refresh(quote)
 
         resp = QuoteResponse.model_validate(quote, from_attributes=True).model_dump()
-        return mask_quote_financials_for_sales(resp, current_user)
+        return mask_quote_financials(resp, current_user)
     except (RequirementEngineError, PricingEngineError) as e:
         db.rollback()
         raise HTTPException(status_code=409, detail=str(e))
@@ -368,7 +364,7 @@ def recalculate_quote(quote_id: int, payload: QuoteRecalculate, db: Session = De
         raise HTTPException(status_code=400, detail="Error recalculating")
 
 @router.post("/{quote_id}/save", response_model=QuoteResponse)
-def save_quote(quote_id: int, payload: QuoteSaveAction, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def save_quote(quote_id: int, payload: QuoteSaveAction, db: Session = Depends(get_db), current_user: User = Depends(require_permission("sales_user"))):
     quote = db.query(Quote).filter(Quote.id == quote_id).first()
     if not quote or quote.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Quote not found")
@@ -386,10 +382,10 @@ def save_quote(quote_id: int, payload: QuoteSaveAction, db: Session = Depends(ge
     db.refresh(quote)
 
     resp = QuoteResponse.model_validate(quote, from_attributes=True).model_dump()
-    return mask_quote_financials_for_sales(resp, current_user)
+    return mask_quote_financials(resp, current_user)
 
 @router.delete("/{quote_id}", response_model=dict)
-def delete_quote(quote_id: int, expected_version: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def delete_quote(quote_id: int, expected_version: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("sales_user"))):
     quote = db.query(Quote).filter(Quote.id == quote_id).first()
     if not quote or quote.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Quote not found")

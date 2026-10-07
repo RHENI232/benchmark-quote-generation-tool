@@ -661,3 +661,110 @@ def test_save_final_transitions_to_saved(client, admin_user, base_payload, db):
     found = next((q for q in list_resp.json() if q["id"] == quote_id), None)
     assert found is not None
     assert found["status"] == "saved"
+
+# --- CP9-A RBAC Tests ---
+
+@pytest.fixture
+def catalog_user(db):
+    user = User(email="catalog_isolated@test.com", role_tier=RoleTier.CATALOG_ENTRY)
+    db.add(user)
+    db.flush()
+    return user
+
+@pytest.fixture
+def management_user(db):
+    user = User(email="management_isolated@test.com", role_tier=RoleTier.MANAGEMENT)
+    db.add(user)
+    db.flush()
+    return user
+
+def test_rbac_sales_can_access_own_quote_no_cost(client, sales_user, base_payload, db):
+    headers = get_auth_headers(sales_user.id)
+    resp = client.post("/api/quotes", json=base_payload, headers=headers)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["subtotal_cost_usd"] is None
+    assert data["line_items"][0]["margin_percent"] is None
+
+def test_rbac_catalog_can_access_quote_no_cost(client, catalog_user, admin_user, base_payload, db):
+    # Admin creates quote
+    admin_headers = get_auth_headers(admin_user.id)
+    resp = client.post("/api/quotes", json=base_payload, headers=admin_headers)
+    quote_id = resp.json()["id"]
+
+    # Catalog Entry accesses it
+    cat_headers = get_auth_headers(catalog_user.id)
+    get_resp = client.get(f"/api/quotes/{quote_id}", headers=cat_headers)
+    assert get_resp.status_code == 200
+    data = get_resp.json()
+    assert data["subtotal_cost_usd"] is None
+    assert data["line_items"][0]["margin_percent"] is None
+
+def test_rbac_management_can_access_quote_with_cost(client, management_user, admin_user, base_payload, db):
+    # Admin creates quote
+    admin_headers = get_auth_headers(admin_user.id)
+    resp = client.post("/api/quotes", json=base_payload, headers=admin_headers)
+    quote_id = resp.json()["id"]
+
+    # Management accesses it
+    mgmt_headers = get_auth_headers(management_user.id)
+    get_resp = client.get(f"/api/quotes/{quote_id}", headers=mgmt_headers)
+    assert get_resp.status_code == 200
+    data = get_resp.json()
+    assert data["subtotal_cost_usd"] is not None
+    assert data["line_items"][0]["margin_percent"] is not None
+
+def test_rbac_admin_can_access_quote_with_cost(client, admin_user, base_payload, db):
+    admin_headers = get_auth_headers(admin_user.id)
+    resp = client.post("/api/quotes", json=base_payload, headers=admin_headers)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["subtotal_cost_usd"] is not None
+    assert data["line_items"][0]["margin_percent"] is not None
+
+def test_rbac_sales_cannot_access_other_users_quote(client, sales_user, admin_user, base_payload, db):
+    # Admin creates quote
+    admin_headers = get_auth_headers(admin_user.id)
+    resp = client.post("/api/quotes", json=base_payload, headers=admin_headers)
+    quote_id = resp.json()["id"]
+
+    # Sales tries to access it
+    sales_headers = get_auth_headers(sales_user.id)
+    get_resp = client.get(f"/api/quotes/{quote_id}", headers=sales_headers)
+    assert get_resp.status_code == 403
+
+def test_rbac_internal_export_access(client, sales_user, catalog_user, management_user, admin_user, base_payload, db):
+    admin_headers = get_auth_headers(admin_user.id)
+    resp = client.post("/api/quotes", json=base_payload, headers=admin_headers)
+    quote_id = resp.json()["id"]
+
+    # Sales -> 403
+    sales_headers = get_auth_headers(sales_user.id)
+    assert client.get(f"/api/quotes/{quote_id}/export/internal", headers=sales_headers).status_code == 403
+
+    # Catalog Entry -> 403
+    cat_headers = get_auth_headers(catalog_user.id)
+    assert client.get(f"/api/quotes/{quote_id}/export/internal", headers=cat_headers).status_code == 403
+
+    # Management -> 200
+    mgmt_headers = get_auth_headers(management_user.id)
+    assert client.get(f"/api/quotes/{quote_id}/export/internal", headers=mgmt_headers).status_code == 200
+
+    # Admin -> 200
+    assert client.get(f"/api/quotes/{quote_id}/export/internal", headers=admin_headers).status_code == 200
+
+def test_rbac_tracking_export_access(client, sales_user, catalog_user, management_user, admin_user, base_payload, db):
+    admin_headers = get_auth_headers(admin_user.id)
+    resp = client.post("/api/quotes", json=base_payload, headers=admin_headers)
+    quote_id = resp.json()["id"]
+
+    sales_headers = get_auth_headers(sales_user.id)
+    assert client.get(f"/api/quotes/{quote_id}/export/tracking", headers=sales_headers).status_code == 403
+
+    cat_headers = get_auth_headers(catalog_user.id)
+    assert client.get(f"/api/quotes/{quote_id}/export/tracking", headers=cat_headers).status_code == 403
+
+    mgmt_headers = get_auth_headers(management_user.id)
+    assert client.get(f"/api/quotes/{quote_id}/export/tracking", headers=mgmt_headers).status_code == 200
+
+    assert client.get(f"/api/quotes/{quote_id}/export/tracking", headers=admin_headers).status_code == 200
