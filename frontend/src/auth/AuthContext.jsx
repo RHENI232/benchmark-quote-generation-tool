@@ -2,6 +2,41 @@ import React, { createContext, useState, useEffect, useContext } from 'react';
 import { getCurrentUser } from '../api/userApi';
 import { login as apiLogin } from '../api/authApi';
 
+export const ROLES = {
+  ADMIN: 'Admin',
+  MANAGEMENT: 'Management',
+  CATALOG_ENTRY: 'Catalog Entry',
+  SALES: 'Sales',
+};
+
+export const PERMISSIONS = {
+  SALES_USER: 'sales_user',
+  CATALOG_EDIT: 'catalog_edit',
+  COST_VISIBILITY: 'cost_visibility',
+  FINANCE_TAX_ADMIN: 'finance_tax_admin',
+  SOLUTION_ADMIN: 'solution_admin',
+  SUPER_ADMIN: 'super_admin',
+};
+
+const ROLE_PERMISSIONS = {
+  [ROLES.SALES]: [PERMISSIONS.SALES_USER],
+  [ROLES.CATALOG_ENTRY]: [PERMISSIONS.SALES_USER, PERMISSIONS.CATALOG_EDIT],
+  [ROLES.MANAGEMENT]: [
+    PERMISSIONS.SALES_USER,
+    PERMISSIONS.CATALOG_EDIT,
+    PERMISSIONS.COST_VISIBILITY,
+    PERMISSIONS.FINANCE_TAX_ADMIN
+  ],
+  [ROLES.ADMIN]: [
+    PERMISSIONS.SALES_USER,
+    PERMISSIONS.CATALOG_EDIT,
+    PERMISSIONS.COST_VISIBILITY,
+    PERMISSIONS.FINANCE_TAX_ADMIN,
+    PERMISSIONS.SOLUTION_ADMIN,
+    PERMISSIONS.SUPER_ADMIN
+  ],
+};
+
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
@@ -49,11 +84,28 @@ export function AuthProvider({ children }) {
     setUser(null);
   };
 
+  const isRole = (role) => {
+    return user?.role_tier === role;
+  };
+
+  const hasRole = (...roles) => {
+    return !!(user && roles.includes(user.role_tier));
+  };
+
+  const hasPermission = (permission) => {
+    if (!user || !user.role_tier) return false;
+    const permissions = ROLE_PERMISSIONS[user.role_tier] || [];
+    return permissions.includes(permission);
+  };
+
   const value = {
     user,
     isLoading,
     login,
-    logout
+    logout,
+    isRole,
+    hasRole,
+    hasPermission
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
