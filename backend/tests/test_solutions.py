@@ -11,6 +11,7 @@ def get_auth_headers(client, email, password):
 def test_users(db):
     users_data = [
         ("admin@test.com", RoleTier.ADMIN),
+        ("management@test.com", RoleTier.MANAGEMENT),
         ("catalog@test.com", RoleTier.CATALOG_ENTRY),
         ("sales@test.com", RoleTier.SALES),
     ]
@@ -53,8 +54,7 @@ def test_patch_margin_catalog_entry(client, test_users, db):
     # Catalog Entry patches it
     headers_cat = get_auth_headers(client, "catalog@test.com", "pass")
     resp2 = client.patch(f"/api/solutions/{sol_id}/margin", json={"default_margin_percent": 25.5}, headers=headers_cat)
-    assert resp2.status_code == 200
-    assert float(resp2.json()["default_margin_percent"]) == 25.5
+    assert resp2.status_code == 403
 
 def test_patch_margin_sales_forbidden(client, test_users):
     # Admin creates it
@@ -217,3 +217,55 @@ def test_reset_catalog_non_shipped_solution(client, test_users):
     resp_search = client.get(f"/api/catalog?solution_id={sol_id}", headers=headers_admin)
     assert len(resp_search.json()) == 1
     assert resp_search.json()[0]["part_number"] == "MY-001"
+
+def test_patch_margin_management(client, test_users):
+    # Admin creates it
+    headers_admin = get_auth_headers(client, "admin@test.com", "pass")
+    resp = client.post("/api/solutions", json={"name": "Margin Test Mgmt", "default_margin_percent": 15.0}, headers=headers_admin)
+    sol_id = resp.json()["id"]
+
+    # Management patches it
+    headers_mgmt = get_auth_headers(client, "management@test.com", "pass")
+    resp2 = client.patch(f"/api/solutions/{sol_id}/margin", json={"default_margin_percent": 30.5}, headers=headers_mgmt)
+    assert resp2.status_code == 200
+    assert float(resp2.json()["default_margin_percent"]) == 30.5
+
+def test_solution_margin_visibility_masked(client, test_users):
+    # Admin creates it
+    headers_admin = get_auth_headers(client, "admin@test.com", "pass")
+    resp = client.post("/api/solutions", json={"name": "Margin Vis Masked", "default_margin_percent": 18.0}, headers=headers_admin)
+    sol_id = resp.json()["id"]
+
+    # Sales
+    headers_sales = get_auth_headers(client, "sales@test.com", "pass")
+    resp_get_sales = client.get(f"/api/solutions/{sol_id}", headers=headers_sales)
+    assert resp_get_sales.status_code == 200
+    assert resp_get_sales.json()["default_margin_percent"] is None
+
+    resp_list_sales = client.get("/api/solutions", headers=headers_sales)
+    assert resp_list_sales.status_code == 200
+    item = next(s for s in resp_list_sales.json() if s["id"] == sol_id)
+    assert item["default_margin_percent"] is None
+
+    # Catalog Entry
+    headers_cat = get_auth_headers(client, "catalog@test.com", "pass")
+    resp_get_cat = client.get(f"/api/solutions/{sol_id}", headers=headers_cat)
+    assert resp_get_cat.status_code == 200
+    assert resp_get_cat.json()["default_margin_percent"] is None
+
+def test_solution_margin_visibility_unmasked(client, test_users):
+    # Admin creates it
+    headers_admin = get_auth_headers(client, "admin@test.com", "pass")
+    resp = client.post("/api/solutions", json={"name": "Margin Vis Unmasked", "default_margin_percent": 22.0}, headers=headers_admin)
+    sol_id = resp.json()["id"]
+
+    # Management
+    headers_mgmt = get_auth_headers(client, "management@test.com", "pass")
+    resp_get_mgmt = client.get(f"/api/solutions/{sol_id}", headers=headers_mgmt)
+    assert resp_get_mgmt.status_code == 200
+    assert float(resp_get_mgmt.json()["default_margin_percent"]) == 22.0
+
+    resp_list_mgmt = client.get("/api/solutions", headers=headers_mgmt)
+    assert resp_list_mgmt.status_code == 200
+    item = next(s for s in resp_list_mgmt.json() if s["id"] == sol_id)
+    assert float(item["default_margin_percent"]) == 22.0

@@ -20,4 +20,5 @@ class SolutionMarginUpdate(BaseModel):
 
 class SolutionResponse(SolutionBase):
     id: int
+    default_margin_percent: Optional[Decimal] = None
     model_config = ConfigDict(from_attributes=True)

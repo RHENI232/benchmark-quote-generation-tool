@@ -7,23 +7,30 @@ from backend.app.core.database import SessionLocal
 from backend.app.models.user import User
 from backend.app.models.solution import Solution
 from backend.app.models.catalog import CatalogItem
-from backend.app.api.deps import get_current_user, require_permission, get_db
+from backend.app.api.deps import get_current_user, require_permission, get_db, has_permission
 from backend.app.schemas.solution import SolutionResponse, SolutionCreate, SolutionUpdate, SolutionMarginUpdate
 from backend.seed import DEFAULT_CATALOG_DATA
 from backend.app.schemas.catalog import CatalogImportResetConfirm
 
 router = APIRouter()
 
+def mask_solution_financials(solution: Solution, current_user: User) -> SolutionResponse:
+    resp = SolutionResponse.model_validate(solution)
+    if not has_permission("cost_visibility", current_user):
+        resp.default_margin_percent = None
+    return resp
+
 @router.get("/", response_model=List[SolutionResponse])
 def get_solutions(db: Session = Depends(get_db), current_user: User = Depends(require_permission("sales_user"))):
-    return db.execute(select(Solution)).scalars().all()
+    solutions = db.execute(select(Solution)).scalars().all()
+    return [mask_solution_financials(s, current_user) for s in solutions]
 
 @router.get("/{solution_id}", response_model=SolutionResponse)
 def get_solution(solution_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("sales_user"))):
     solution = db.execute(select(Solution).where(Solution.id == solution_id)).scalar_one_or_none()
     if not solution:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Solution not found")
-    return solution
+    return mask_solution_financials(solution, current_user)
 
 @router.post("/", response_model=SolutionResponse, status_code=status.HTTP_201_CREATED)
 def create_solution(solution_in: SolutionCreate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("solution_admin"))):
@@ -51,7 +58,7 @@ def update_solution(solution_id: int, solution_in: SolutionUpdate, db: Session =
     return solution
 
 @router.patch("/{solution_id}/margin", response_model=SolutionResponse)
-def update_solution_margin(solution_id: int, margin_in: SolutionMarginUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("catalog_edit"))):
+def update_solution_margin(solution_id: int, margin_in: SolutionMarginUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("finance_tax_admin"))):
     solution = db.execute(select(Solution).where(Solution.id == solution_id)).scalar_one_or_none()
     if not solution:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Solution not found")
@@ -59,7 +66,7 @@ def update_solution_margin(solution_id: int, margin_in: SolutionMarginUpdate, db
     solution.default_margin_percent = margin_in.default_margin_percent
     db.commit()
     db.refresh(solution)
-    return solution
+    return mask_solution_financials(solution, current_user)
 
 @router.post("/{solution_id}/catalog/reset", response_model=dict)
 def reset_catalog_to_defaults(
