@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, ROLES } from './auth/AuthContext';
 import ProtectedRoute from './auth/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
+import AcceptInvitePage from './pages/AcceptInvitePage';
 import DashboardPage from './pages/DashboardPage';
 import QuoteListPage from './pages/QuoteListPage';
 import QuoteWizardPage from './pages/QuoteWizardPage';
@@ -17,6 +18,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/invite/accept" element={<AcceptInvitePage />} />
           <Route path="/" element={<ProtectedRoute />}>
             <Route index element={<DashboardPage />} />
             <Route path="quotes" element={<QuoteListPage />} />
