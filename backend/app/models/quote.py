@@ -1,3 +1,4 @@
+from typing import Optional
 from sqlalchemy import Column, Integer, String, JSON, ForeignKey, DateTime, Enum, Numeric, Boolean
 from sqlalchemy.orm import relationship
 import enum
@@ -56,6 +57,7 @@ class Quote(Base):
     created_by = relationship("User", foreign_keys=[created_by_user_id])
     last_edited_by = relationship("User", foreign_keys=[last_edited_by_user_id])
     line_items = relationship("QuoteLineItem", back_populates="quote", cascade="all, delete-orphan")
+    approval_logs = relationship("QuoteApprovalLog", back_populates="quote", order_by="QuoteApprovalLog.created_at.asc()", cascade="all, delete-orphan")
 
 class QuoteLineItem(Base):
     __tablename__ = "quote_line_items"
@@ -95,5 +97,13 @@ class QuoteApprovalLog(Base):
     comment = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
 
-    quote = relationship("Quote")
+    quote = relationship("Quote", back_populates="approval_logs")
     user = relationship("User")
+
+    @property
+    def user_email(self) -> Optional[str]:
+        return self.user.email if self.user else None
+
+    @property
+    def user_role(self) -> Optional[str]:
+        return self.user.role_tier.value if self.user and self.user.role_tier else None

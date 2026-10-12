@@ -44,7 +44,8 @@ export default function QuoteWizardPage() {
       async function loadExistingQuote() {
         try {
           const data = await getQuote(id);
-          if (data.status !== 'draft') {
+          const statusLower = data.status?.toLowerCase();
+          if (statusLower !== 'draft' && statusLower !== 'changes_requested') {
             navigate(`/quotes/${id}`);
             return;
           }

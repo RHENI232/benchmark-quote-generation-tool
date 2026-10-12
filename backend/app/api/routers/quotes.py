@@ -14,7 +14,8 @@ from backend.app.models.region import Region
 from backend.app.models.solution import Solution
 from backend.app.schemas.quote import (
     QuoteCreate, QuoteResponse, QuoteUpdate, QuoteDeleteAction, QuoteRecalculate, QuoteSummary,
-    QuoteQueueItem, QuoteSubmitAction, QuoteApproveAction, QuoteRequestChangesAction, QuoteOverrideApproveAction
+    QuoteQueueItem, QuoteSubmitAction, QuoteApproveAction, QuoteRequestChangesAction, QuoteOverrideApproveAction,
+    QuoteApprovalLogResponse
 )
 from backend.app.schemas.requirement import RequirementPayload
 from backend.app.services.engines.requirement_engine import parse_and_evaluate_requirements, RequirementEngineError
@@ -353,3 +354,13 @@ def override_approve_quote(quote_id: int, payload: QuoteOverrideApproveAction, d
         else:
             logger.error(f"Error retrieving quote after successful override-approve: {e}")
             raise HTTPException(status_code=500, detail="The quote was approved successfully, but an error occurred retrieving the updated data")
+
+@router.get("/{quote_id}/history", response_model=List[QuoteApprovalLogResponse])
+def get_quote_history(quote_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("sales_user"))):
+    quote = db.query(Quote).filter(Quote.id == quote_id).first()
+    if not quote or quote.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Quote not found")
+    if current_user.role_tier == RoleTier.SALES and quote.created_by_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden: You do not own this quote")
+    logs = db.query(QuoteApprovalLog).filter(QuoteApprovalLog.quote_id == quote_id).order_by(QuoteApprovalLog.created_at.asc(), QuoteApprovalLog.id.asc()).all()
+    return logs

@@ -66,3 +66,7 @@ export async function overrideApproveQuote(quoteId, payload) {
 export async function getApprovalQueue() {
   return fetchClient('/api/quotes/approval-queue');
 }
+
+export async function getQuoteHistory(quoteId) {
+  return fetchClient(`/api/quotes/${quoteId}/history`);
+}

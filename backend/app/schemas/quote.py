@@ -63,6 +63,21 @@ class QuoteLineItemResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class QuoteApprovalLogResponse(BaseModel):
+    id: int
+    quote_id: int
+    quote_version: int
+    action: str
+    from_status: QuoteStatus
+    to_status: QuoteStatus
+    user_id: int
+    user_email: Optional[str] = None
+    user_role: Optional[str] = None
+    comment: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
 class QuoteResponse(QuoteBase):
     id: int
     solution_id: int
@@ -94,6 +109,7 @@ class QuoteResponse(QuoteBase):
     legal_entity_contact: Optional[str] = None
 
     line_items: List[QuoteLineItemResponse] = []
+    approval_logs: List[QuoteApprovalLogResponse] = []
 
     model_config = ConfigDict(from_attributes=True)
 

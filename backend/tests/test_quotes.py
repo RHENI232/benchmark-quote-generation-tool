@@ -1085,3 +1085,142 @@ def test_cp9d_export_internal_tracking_allow_all_statuses(client, admin_user, ba
         
         resp_trk = client.get(f"/api/quotes/{q['id']}/export/tracking", headers=headers)
         assert resp_trk.status_code == 200
+
+def test_cp9d_approval_history_persistence_and_retrieval(client, sales_user, management_user, base_payload):
+    sales_headers = get_auth_headers(sales_user.id)
+    mgmt_headers = get_auth_headers(management_user.id)
+
+    # 1. Sales creates quote
+    create_resp = client.post("/api/quotes", json=base_payload, headers=sales_headers)
+    assert create_resp.status_code == 201
+    q = create_resp.json()
+    quote_id = q["id"]
+    v1 = q["version"]
+
+    # 2. Sales submits
+    sub_resp = client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": v1, "comment": "Initial submission"}, headers=sales_headers)
+    assert sub_resp.status_code == 200
+
+    # 3. Management requests changes
+    req_resp = client.post(f"/api/quotes/{quote_id}/request-changes", json={"expected_version": v1, "comment": "Please adjust discount percentage"}, headers=mgmt_headers)
+    assert req_resp.status_code == 200
+    assert req_resp.json()["status"] == "changes_requested"
+
+    # 4. Check GET /api/quotes/{id} returns approval_logs
+    get_resp = client.get(f"/api/quotes/{quote_id}", headers=sales_headers)
+    assert get_resp.status_code == 200
+    q_data = get_resp.json()
+    assert "approval_logs" in q_data
+    logs = q_data["approval_logs"]
+    assert len(logs) == 2
+
+    assert logs[0]["action"] == "SUBMIT"
+    assert logs[0]["from_status"] == "draft"
+    assert logs[0]["to_status"] == "pending_approval"
+    assert logs[0]["comment"] == "Initial submission"
+    assert logs[0]["user_email"] == sales_user.email
+    assert logs[0]["user_role"] == "Sales"
+
+    assert logs[1]["action"] == "REQUEST_CHANGES"
+    assert logs[1]["from_status"] == "pending_approval"
+    assert logs[1]["to_status"] == "changes_requested"
+    assert logs[1]["comment"] == "Please adjust discount percentage"
+    assert logs[1]["user_email"] == management_user.email
+    assert logs[1]["user_role"] == "Management"
+
+    # 5. Check dedicated GET /api/quotes/{id}/history endpoint
+    hist_resp = client.get(f"/api/quotes/{quote_id}/history", headers=sales_headers)
+    assert hist_resp.status_code == 200
+    hist_logs = hist_resp.json()
+    assert len(hist_logs) == 2
+    assert hist_logs[1]["comment"] == "Please adjust discount percentage"
+    assert hist_logs[1]["user_email"] == management_user.email
+
+def test_cp9d_approval_history_sales_ownership_rbac(client, sales_user, sales_user_2, management_user, admin_user, base_payload):
+    sales_headers = get_auth_headers(sales_user.id)
+    sales_2_headers = get_auth_headers(sales_user_2.id)
+    mgmt_headers = get_auth_headers(management_user.id)
+    admin_headers = get_auth_headers(admin_user.id)
+
+    # Sales creates quote
+    create_resp = client.post("/api/quotes", json=base_payload, headers=sales_headers)
+    assert create_resp.status_code == 201
+    quote_id = create_resp.json()["id"]
+
+    # Sales 1 can view history
+    res1 = client.get(f"/api/quotes/{quote_id}/history", headers=sales_headers)
+    assert res1.status_code == 200
+
+    # Sales 2 cannot view history for Sales 1's quote
+    res2 = client.get(f"/api/quotes/{quote_id}/history", headers=sales_2_headers)
+    assert res2.status_code == 403
+
+    # Unauthenticated returns 403 (HTTPBearer default)
+    res_unauth = client.get(f"/api/quotes/{quote_id}/history")
+    assert res_unauth.status_code == 403
+
+    # Management and Admin can view history
+    assert client.get(f"/api/quotes/{quote_id}/history", headers=mgmt_headers).status_code == 200
+    assert client.get(f"/api/quotes/{quote_id}/history", headers=admin_headers).status_code == 200
+
+    # Non-existent quote
+    assert client.get("/api/quotes/999999/history", headers=admin_headers).status_code == 404
+
+def test_cp9d_sales_edit_and_resubmit_changes_requested_flow(client, sales_user, management_user, base_payload):
+    sales_headers = get_auth_headers(sales_user.id)
+    mgmt_headers = get_auth_headers(management_user.id)
+
+    # 1. Create draft
+    resp = client.post("/api/quotes", json=base_payload, headers=sales_headers)
+    quote_id = resp.json()["id"]
+    v1 = resp.json()["version"]
+
+    # 2. Submit -> PENDING_APPROVAL
+    sub_resp = client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": v1}, headers=sales_headers)
+    assert sub_resp.status_code == 200
+    assert sub_resp.json()["status"] == "pending_approval"
+
+    # 3. Request Changes -> CHANGES_REQUESTED
+    rc_resp = client.post(f"/api/quotes/{quote_id}/request-changes", json={"expected_version": v1, "comment": "Update client name and studios"}, headers=mgmt_headers)
+    assert rc_resp.status_code == 200
+    assert rc_resp.json()["status"] == "changes_requested"
+
+    # 4. Sales edits quote via PUT
+    update_payload = base_payload.copy()
+    update_payload["client_name"] = "Updated Client Corporation"
+    update_payload["expected_version"] = v1
+    put_resp = client.put(f"/api/quotes/{quote_id}", json=update_payload, headers=sales_headers)
+    assert put_resp.status_code == 200
+    updated_q = put_resp.json()
+    assert updated_q["id"] == quote_id # SAME QUOTE
+    assert updated_q["client_name"] == "Updated Client Corporation"
+    assert updated_q["status"] == "changes_requested"
+    v2 = updated_q["version"]
+    assert v2 == v1 + 1 # Version incremented
+
+    # 5. Resubmit with stale version fails (409)
+    fail_resub = client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": v1, "comment": "Resubmitting with stale version"}, headers=sales_headers)
+    assert fail_resub.status_code == 409
+
+    # 6. Resubmit with current version v2 succeeds
+    resub_resp = client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": v2, "comment": "Resubmitting with updated details"}, headers=sales_headers)
+    assert resub_resp.status_code == 200
+    assert resub_resp.json()["status"] == "pending_approval"
+
+    # 7. Management sees quote in approval queue
+    queue_resp = client.get("/api/quotes/approval-queue", headers=mgmt_headers)
+    assert queue_resp.status_code == 200
+    assert any(item["id"] == quote_id for item in queue_resp.json())
+
+    # 8. Verify history preserved all 3 steps
+    hist_resp = client.get(f"/api/quotes/{quote_id}/history", headers=sales_headers)
+    assert hist_resp.status_code == 200
+    hist = hist_resp.json()
+    assert len(hist) == 3
+    assert hist[0]["action"] == "SUBMIT"
+    assert hist[0]["quote_version"] == v1
+    assert hist[1]["action"] == "REQUEST_CHANGES"
+    assert hist[1]["comment"] == "Update client name and studios"
+    assert hist[2]["action"] == "SUBMIT"
+    assert hist[2]["quote_version"] == v2
+    assert hist[2]["comment"] == "Resubmitting with updated details"

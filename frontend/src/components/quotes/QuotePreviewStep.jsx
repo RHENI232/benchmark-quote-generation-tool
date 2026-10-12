@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { previewQuote, createQuote, submitQuote, updateQuote } from '../../api/quoteApi';
 import { regionApi } from '../../api/regionApi';
 import { solutionApi } from '../../api/solutionApi';
+import StatusBadge from '../common/StatusBadge';
 
 export default function QuotePreviewStep({ draftQuote, onBack }) {
   const [previewData, setPreviewData] = useState(null);
@@ -262,9 +263,7 @@ export default function QuotePreviewStep({ draftQuote, onBack }) {
         <div className="meta-item">
           <div className="meta-label">Status</div>
           <div className="meta-value">
-            <span className={`badge ${previewData.status === 'APPROVED' ? 'badge-success' : (previewData.status === 'DRAFT' || previewData.status === 'PENDING_APPROVAL' || previewData.status === 'CHANGES_REQUESTED' ? 'badge-warning' : 'badge-neutral')}`}>
-              {previewData.status ? previewData.status.toUpperCase().replace('_', ' ') : 'PREVIEW'}
-            </span>
+            <StatusBadge status={previewData.status || 'draft'} />
           </div>
         </div>
         <div className="meta-item">

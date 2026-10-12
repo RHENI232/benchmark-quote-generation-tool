@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getQuote, submitQuote, approveQuote, requestChangesQuote, overrideApproveQuote } from '../api/quoteApi';
+import { getQuote, getQuoteHistory, submitQuote, approveQuote, requestChangesQuote, overrideApproveQuote } from '../api/quoteApi';
 import { regionApi } from '../api/regionApi';
 import { solutionApi } from '../api/solutionApi';
 import { useAuth, PERMISSIONS } from '../auth/AuthContext';
+import StatusBadge from '../components/common/StatusBadge';
 import '../styles/wizard.css';
 
 export default function QuoteDetailPage() {
@@ -11,6 +12,7 @@ export default function QuoteDetailPage() {
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
   const [quote, setQuote] = useState(null);
+  const [approvalLogs, setApprovalLogs] = useState([]);
   const [regions, setRegions] = useState([]);
   const [solutions, setSolutions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -28,12 +30,19 @@ export default function QuoteDetailPage() {
       try {
         setLoading(true);
         setError(null);
-        const [quoteData, regionsData, solutionsData] = await Promise.all([
+        const [quoteData, regionsData, solutionsData, historyData] = await Promise.all([
           getQuote(id),
           regionApi.getRegions().catch(e => { console.warn("Failed to get regions:", e); return []; }),
-          solutionApi.getSolutions().catch(e => { console.warn("Failed to get solutions:", e); return []; })
+          solutionApi.getSolutions().catch(e => { console.warn("Failed to get solutions:", e); return []; }),
+          getQuoteHistory(id).catch(e => { console.warn("Failed to get quote history:", e); return null; })
         ]);
-        if (isMounted) { setQuote(quoteData); setRegions(regionsData); setSolutions(solutionsData); setLoading(false); }
+        if (isMounted) {
+          setQuote(quoteData);
+          setRegions(regionsData);
+          setSolutions(solutionsData);
+          setApprovalLogs(historyData || quoteData.approval_logs || []);
+          setLoading(false);
+        }
       } catch (err) {
         if (isMounted) { console.error('Failed to fetch quote details:', err); setError(err.message || 'Failed to load quote details.'); setLoading(false); }
       }
@@ -65,9 +74,13 @@ export default function QuoteDetailPage() {
         setWorkflowAction(null);
         setWorkflowComment('');
       }
-      // Refresh the quote
-      const updatedQuote = await getQuote(id);
+      // Refresh the quote and history
+      const [updatedQuote, updatedHistory] = await Promise.all([
+        getQuote(id),
+        getQuoteHistory(id).catch(() => null)
+      ]);
       setQuote(updatedQuote);
+      setApprovalLogs(updatedHistory || updatedQuote.approval_logs || []);
     } catch (err) {
       if (err.status === 409) {
         setConflictError('The quote was updated by another user. Please refresh the page.');
@@ -161,6 +174,11 @@ export default function QuoteDetailPage() {
     });
   }
   const sections = Object.keys(groupedLineItems);
+  const currentStatus = quote.status ? quote.status.toLowerCase() : '';
+  const latestChangeRequest = (approvalLogs || [])
+    .slice()
+    .reverse()
+    .find(l => l.action === 'REQUEST_CHANGES' || l.to_status === 'changes_requested');
 
   return (
     <div className="preview-step-container">
@@ -179,9 +197,7 @@ export default function QuoteDetailPage() {
         <div className="meta-item">
           <div className="meta-label">Status</div>
           <div className="meta-value">
-            <span className={`badge ${quote.status === 'APPROVED' ? 'badge-success' : (quote.status === 'DRAFT' || quote.status === 'PENDING_APPROVAL' || quote.status === 'CHANGES_REQUESTED' ? 'badge-warning' : 'badge-neutral')}`}>
-              {quote.status ? quote.status.toUpperCase().replace('_', ' ') : 'UNKNOWN'}
-            </span>
+            <StatusBadge status={quote.status} />
             {quote.is_urgent && (
               <span className="badge badge-danger ms-2" style={{ marginLeft: '0.5rem' }}>URGENT</span>
             )}
@@ -192,6 +208,38 @@ export default function QuoteDetailPage() {
           <div className="meta-value">{quote.date ? new Date(quote.date).toLocaleDateString() : (quote.created_at ? new Date(quote.created_at).toLocaleDateString() : new Date().toLocaleDateString())}</div>
         </div>
       </div>
+
+      {/* CHANGES REQUESTED BANNER */}
+      {currentStatus === 'changes_requested' && (
+        <div className="card mb-4" style={{ borderLeft: '4px solid #ef4444', backgroundColor: '#fef2f2', padding: '1.25rem', marginTop: '1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+            <div style={{ fontSize: '1.5rem', lineHeight: '1.75rem' }}>⚠️</div>
+            <div style={{ flex: 1 }}>
+              <h3 style={{ margin: '0 0 0.25rem 0', color: '#991b1b', fontSize: '1.125rem', fontWeight: 600 }}>
+                Changes Requested
+              </h3>
+              <p style={{ margin: '0 0 0.5rem 0', color: '#7f1d1d', fontSize: '0.875rem' }}>
+                Management has requested modifications before this quote can be approved. Please review the comments below, edit the quote, and resubmit.
+              </p>
+              {latestChangeRequest?.comment ? (
+                <div style={{ backgroundColor: '#ffffff', padding: '0.75rem 1rem', borderRadius: '0.375rem', border: '1px solid #fecaca', marginTop: '0.5rem' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#991b1b', marginBottom: '0.25rem' }}>
+                    Comment from {latestChangeRequest.user_email || `Reviewer #${latestChangeRequest.user_id}`}
+                    {latestChangeRequest.user_role && ` (${latestChangeRequest.user_role})`} on {new Date(latestChangeRequest.created_at).toLocaleString()}:
+                  </div>
+                  <div style={{ color: '#1f2937', fontStyle: 'italic', whiteSpace: 'pre-wrap', fontSize: '0.9375rem' }}>
+                    "{latestChangeRequest.comment}"
+                  </div>
+                </div>
+              ) : (
+                <div style={{ color: '#7f1d1d', fontStyle: 'italic', fontSize: '0.875rem' }}>
+                  No specific comment was recorded.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* CUSTOMER & QUOTE INFO */}
       <div className="info-panels">
@@ -327,6 +375,56 @@ export default function QuoteDetailPage() {
       </div>
       </div>
 
+      {/* APPROVAL HISTORY TABLE */}
+      {approvalLogs && approvalLogs.length > 0 && (
+        <div className="card mb-4" style={{ marginTop: '1.5rem' }}>
+          <div className="card-header" style={{ padding: '0.75rem 1.25rem', backgroundColor: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+            <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: '#374151' }}>
+              Approval History & Audit Trail
+            </h3>
+          </div>
+          <div className="table-container">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '20%' }}>Date & Time</th>
+                  <th style={{ width: '15%' }}>Action</th>
+                  <th style={{ width: '20%' }}>Reviewer / User</th>
+                  <th style={{ width: '10%', textAlign: 'center' }}>Version</th>
+                  <th style={{ width: '35%' }}>Comment / Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                {approvalLogs.map((log) => (
+                  <tr key={log.id}>
+                    <td className="text-sm text-gray-500">{new Date(log.created_at).toLocaleString()}</td>
+                    <td>
+                      <span className={`badge ${
+                        log.action === 'APPROVE' || log.action === 'OVERRIDE_APPROVE'
+                          ? 'badge-success'
+                          : log.action === 'REQUEST_CHANGES'
+                          ? 'badge-danger'
+                          : 'badge-warning'
+                      }`}>
+                        {log.action.replace('_', ' ')}
+                      </span>
+                    </td>
+                    <td className="text-sm font-medium text-gray-900">
+                      {log.user_email || `User #${log.user_id}`}
+                      {log.user_role && <span className="text-xs text-gray-500 ms-1"> ({log.user_role})</span>}
+                    </td>
+                    <td style={{ textAlign: 'center' }} className="text-sm text-gray-600">v{log.quote_version}</td>
+                    <td className="text-sm text-gray-800" style={{ whiteSpace: 'pre-wrap' }}>
+                      {log.comment || <span className="text-gray-400 italic">No comment provided</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* WORKFLOW MESSAGES */}
       {conflictError && (
         <div className="alert alert-danger mt-3 mb-3">
@@ -352,7 +450,7 @@ export default function QuoteDetailPage() {
           </button>
         </div>
         <div className="action-right" style={{ display: 'flex', gap: '0.5rem' }}>
-          {quote.status === 'draft' && (
+          {(currentStatus === 'draft' || currentStatus === 'changes_requested') && (
             <>
               <button
                 type="button"
@@ -360,7 +458,7 @@ export default function QuoteDetailPage() {
                 onClick={() => navigate(`/quotes/${quote.id}/edit`)}
                 disabled={isSubmittingWorkflow}
               >
-                Edit Draft
+                {currentStatus === 'changes_requested' ? 'Edit Quote' : 'Edit Draft'}
               </button>
               <button
                 type="button"
@@ -368,11 +466,11 @@ export default function QuoteDetailPage() {
                 onClick={() => handleWorkflowAction('submit')}
                 disabled={isSubmittingWorkflow}
               >
-                Submit for Approval
+                {currentStatus === 'changes_requested' ? 'Resubmit for Approval' : 'Submit for Approval'}
               </button>
             </>
           )}
-          {quote.status === 'pending_approval' && hasPermission(PERMISSIONS.FINANCE_TAX_ADMIN) && (
+          {currentStatus === 'pending_approval' && hasPermission(PERMISSIONS.FINANCE_TAX_ADMIN) && (
             <>
               <button
                 type="button"
@@ -392,7 +490,7 @@ export default function QuoteDetailPage() {
               </button>
             </>
           )}
-          {quote.status === 'pending_approval' && hasPermission(PERMISSIONS.SUPER_ADMIN) && (
+          {currentStatus === 'pending_approval' && hasPermission(PERMISSIONS.SUPER_ADMIN) && (
             <button
               type="button"
               className="btn btn-warning btn-lg"
