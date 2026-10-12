@@ -6,7 +6,9 @@ from backend.app.core.database import Base
 
 class QuoteStatus(str, enum.Enum):
     DRAFT = "draft"
-    SAVED = "saved"
+    PENDING_APPROVAL = "pending_approval"
+    CHANGES_REQUESTED = "changes_requested"
+    APPROVED = "approved"
 
 class Quote(Base):
     __tablename__ = "quotes"
@@ -31,7 +33,8 @@ class Quote(Base):
     updated_at = Column(DateTime, default=datetime.datetime.utcnow, onupdate=datetime.datetime.utcnow)
     deleted_at = Column(DateTime, nullable=True, index=True)
     
-    status = Column(Enum(QuoteStatus), default=QuoteStatus.DRAFT, nullable=False)
+    status = Column(Enum(QuoteStatus, values_callable=lambda obj: [e.value for e in obj]), default=QuoteStatus.DRAFT, nullable=False)
+    is_urgent = Column(Boolean, nullable=False, default=False)
 
     # CP-4 Snapshot Fields
     currency_code = Column(String, nullable=False, default="USD")
@@ -78,3 +81,19 @@ class QuoteLineItem(Base):
 
     quote = relationship("Quote", back_populates="line_items")
     catalog_item = relationship("CatalogItem")
+
+class QuoteApprovalLog(Base):
+    __tablename__ = "quote_approval_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    quote_id = Column(Integer, ForeignKey("quotes.id"), nullable=False)
+    quote_version = Column(Integer, nullable=False)
+    action = Column(String, nullable=False)
+    from_status = Column(Enum(QuoteStatus, values_callable=lambda obj: [e.value for e in obj]), nullable=False)
+    to_status = Column(Enum(QuoteStatus, values_callable=lambda obj: [e.value for e in obj]), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    comment = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow, nullable=False)
+
+    quote = relationship("Quote")
+    user = relationship("User")

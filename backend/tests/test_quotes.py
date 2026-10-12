@@ -135,12 +135,12 @@ def test_save_quote_mutates_status(client, admin_user, base_payload):
     version = resp.json()["version"]
 
     save_payload = {"expected_version": version}
-    save_resp = client.post(f"/api/quotes/{quote_id}/save", json=save_payload, headers=headers)
+    save_resp = client.post(f"/api/quotes/{quote_id}/submit", json=save_payload, headers=headers)
     assert save_resp.status_code == 200
 
-    assert save_resp.json()["status"] == "saved"
+    assert save_resp.json()["status"] == "pending_approval"
     new_version = save_resp.json()["version"]
-    assert new_version == version + 1
+    assert new_version == version
 
     recalc_payload = {
         "requirement_data": base_payload["requirement_data"],
@@ -245,7 +245,7 @@ def create_saved_quote(client, admin_user, base_payload):
     version = resp.json()["version"]
 
     save_payload = {"expected_version": version}
-    save_resp = client.post(f"/api/quotes/{quote_id}/save", json=save_payload, headers=headers)
+    save_resp = client.post(f"/api/quotes/{quote_id}/submit", json=save_payload, headers=headers)
     assert save_resp.status_code == 200
     return save_resp.json()
 
@@ -353,13 +353,19 @@ def test_cp6_list_quotes_unauthorized(client):
 
 # CP6-B Export Endpoint Tests
 
+def create_approved_quote(client, creator_user, admin_user, base_payload):
+    q = create_saved_quote(client, creator_user, base_payload)
+    resp = client.post(f"/api/quotes/{q['id']}/override-approve", json={"expected_version": q["version"], "comment": "approved for test"}, headers=get_auth_headers(admin_user.id))
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
 def test_cp6_export_customer_copy_rbac(client, admin_user, management_user, catalog_entry_user, sales_user, base_payload):
     # Admin creates a quote
-    q = create_saved_quote(client, admin_user, base_payload)
+    q = create_approved_quote(client, admin_user, admin_user, base_payload)
     quote_id = q["id"]
 
     # All roles should be able to access Customer Copy
-    # Sales — but admin-owned quote, so Sales can't access (ownership check)
+    # Sales ΓÇö but admin-owned quote, so Sales can't access (ownership check)
     resp = client.get(f"/api/quotes/{quote_id}/export/customer", headers=get_auth_headers(sales_user.id))
     assert resp.status_code == 403  # Sales doesn't own this quote
 
@@ -375,9 +381,9 @@ def test_cp6_export_customer_copy_rbac(client, admin_user, management_user, cata
     resp = client.get(f"/api/quotes/{quote_id}/export/customer", headers=get_auth_headers(admin_user.id))
     assert resp.status_code == 200
 
-def test_cp6_export_customer_copy_sales_own_quote(client, sales_user, base_payload):
+def test_cp6_export_customer_copy_sales_own_quote(client, sales_user, admin_user, base_payload):
     """Sales user CAN export Customer Copy for their own quote."""
-    q = create_saved_quote(client, sales_user, base_payload)
+    q = create_approved_quote(client, sales_user, admin_user, base_payload)
     quote_id = q["id"]
     resp = client.get(f"/api/quotes/{quote_id}/export/customer", headers=get_auth_headers(sales_user.id))
     assert resp.status_code == 200
@@ -429,7 +435,7 @@ def test_cp6_export_nonexistent_and_deleted(client, admin_user, base_payload):
     assert resp.status_code == 404
 
     # Deleted
-    q = create_saved_quote(client, admin_user, base_payload)
+    q = create_approved_quote(client, admin_user, admin_user, base_payload)
     client.delete(f"/api/quotes/{q['id']}?expected_version={q['version']}", headers=headers)
 
     resp = client.get(f"/api/quotes/{q['id']}/export/customer", headers=headers)
@@ -442,7 +448,7 @@ def test_cp6_customer_copy_content(client, admin_user, base_payload):
     from openpyxl import load_workbook
     from io import BytesIO
 
-    q = create_saved_quote(client, admin_user, base_payload)
+    q = create_approved_quote(client, admin_user, admin_user, base_payload)
     headers = get_auth_headers(admin_user.id)
     resp = client.get(f"/api/quotes/{q['id']}/export/customer", headers=headers)
     assert resp.status_code == 200
@@ -483,7 +489,7 @@ def test_cp6_customer_copy_no_cost_columns(client, admin_user, base_payload):
     from openpyxl import load_workbook
     from io import BytesIO
 
-    q = create_saved_quote(client, admin_user, base_payload)
+    q = create_approved_quote(client, admin_user, admin_user, base_payload)
     headers = get_auth_headers(admin_user.id)
     resp = client.get(f"/api/quotes/{q['id']}/export/customer", headers=headers)
     wb = load_workbook(BytesIO(resp.content))
@@ -601,13 +607,13 @@ def test_cp6_customer_copy_section_separation(client, admin_user, base_payload):
     from openpyxl import load_workbook
     from io import BytesIO
 
-    q = create_saved_quote(client, admin_user, base_payload)
+    q = create_approved_quote(client, admin_user, admin_user, base_payload)
     headers = get_auth_headers(admin_user.id)
     resp = client.get(f"/api/quotes/{q['id']}/export/customer", headers=headers)
     wb = load_workbook(BytesIO(resp.content))
     ws = wb.active
 
-    # The workbook should load without error — section structure is valid
+    # The workbook should load without error ΓÇö section structure is valid
     # With a single-section quote this just verifies structural integrity
     assert ws.max_row > 5, "Customer Copy should have content rows"
 
@@ -616,7 +622,7 @@ def test_cp6_export_xlsx_valid_file(client, admin_user, base_payload):
     from openpyxl import load_workbook
     from io import BytesIO
 
-    q = create_saved_quote(client, admin_user, base_payload)
+    q = create_approved_quote(client, admin_user, admin_user, base_payload)
     headers = get_auth_headers(admin_user.id)
 
     for export_type in ["customer", "internal", "tracking"]:
@@ -643,7 +649,7 @@ def test_dashboard_lists_drafts(client, admin_user, base_payload, db):
     assert found is not None
     assert found["status"] == "draft"
 
-def test_save_final_transitions_to_saved(client, admin_user, base_payload, db):
+def test_submit_transitions_to_pending_approval(client, admin_user, base_payload, db):
     headers = get_auth_headers(admin_user.id)
     # 1. Create a draft quote
     resp = client.post("/api/quotes", json=base_payload, headers=headers)
@@ -652,15 +658,15 @@ def test_save_final_transitions_to_saved(client, admin_user, base_payload, db):
 
     # 2. Call Save to finalize
     save_payload = {"expected_version": version}
-    save_resp = client.post(f"/api/quotes/{quote_id}/save", json=save_payload, headers=headers)
+    save_resp = client.post(f"/api/quotes/{quote_id}/submit", json=save_payload, headers=headers)
     assert save_resp.status_code == 200
-    assert save_resp.json()["status"] == "saved"
+    assert save_resp.json()["status"] == "pending_approval"
 
     # 3. Check dashboard (list quotes)
     list_resp = client.get("/api/quotes?limit=10", headers=headers)
     found = next((q for q in list_resp.json() if q["id"] == quote_id), None)
     assert found is not None
-    assert found["status"] == "saved"
+    assert found["status"] == "pending_approval"
 
 # --- CP9-A RBAC Tests ---
 
@@ -768,3 +774,314 @@ def test_rbac_tracking_export_access(client, sales_user, catalog_user, managemen
     assert client.get(f"/api/quotes/{quote_id}/export/tracking", headers=mgmt_headers).status_code == 200
 
     assert client.get(f"/api/quotes/{quote_id}/export/tracking", headers=admin_headers).status_code == 200
+
+
+# --- CP9-D Tests ---
+
+def test_cp9d_approval_queue(client, admin_user, management_user, sales_user, catalog_user, base_payload):
+    # Sales can't access
+    sales_headers = get_auth_headers(sales_user.id)
+    assert client.get("/api/quotes/approval-queue", headers=sales_headers).status_code == 403
+    
+    # Catalog Entry can't access
+    cat_headers = get_auth_headers(catalog_user.id)
+    assert client.get("/api/quotes/approval-queue", headers=cat_headers).status_code == 403
+    
+    # Management can access
+    mgmt_headers = get_auth_headers(management_user.id)
+    assert client.get("/api/quotes/approval-queue", headers=mgmt_headers).status_code == 200
+
+    # Create a draft
+    resp = client.post("/api/quotes", json=base_payload, headers=sales_headers)
+    quote_id = resp.json()["id"]
+    version = resp.json()["version"]
+
+    # Not in queue yet
+    queue_resp = client.get("/api/quotes/approval-queue", headers=mgmt_headers)
+    assert not any(q["id"] == quote_id for q in queue_resp.json())
+
+    # Submit
+    submit_resp = client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": version}, headers=sales_headers)
+    assert submit_resp.status_code == 200
+
+    # Now in queue
+    queue_resp = client.get("/api/quotes/approval-queue", headers=mgmt_headers)
+    assert any(q["id"] == quote_id for q in queue_resp.json())
+    item = next(q for q in queue_resp.json() if q["id"] == quote_id)
+    assert item["status"] == "pending_approval"
+
+    # Approve
+    approve_resp = client.post(f"/api/quotes/{quote_id}/approve", json={"expected_version": version}, headers=mgmt_headers)
+    assert approve_resp.status_code == 200
+
+    # Not in queue anymore
+    queue_resp = client.get("/api/quotes/approval-queue", headers=mgmt_headers)
+    assert not any(q["id"] == quote_id for q in queue_resp.json())
+
+def test_cp9d_request_changes_and_override(client, sales_user, management_user, base_payload):
+    sales_headers = get_auth_headers(sales_user.id)
+    mgmt_headers = get_auth_headers(management_user.id)
+
+    resp = client.post("/api/quotes", json=base_payload, headers=sales_headers)
+    quote_id = resp.json()["id"]
+    version = resp.json()["version"]
+
+    submit_resp = client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": version}, headers=sales_headers)
+    assert submit_resp.status_code == 200
+    
+    # Request changes
+    rc_resp = client.post(f"/api/quotes/{quote_id}/request-changes", json={"expected_version": version, "comment": "Fix this"}, headers=mgmt_headers)
+    assert rc_resp.status_code == 200
+    assert rc_resp.json()["status"] == "changes_requested"
+
+    # Admin Override Approve
+    ov_resp = client.post(f"/api/quotes/{quote_id}/override-approve", json={"expected_version": version, "comment": "Overriding"}, headers=mgmt_headers)
+    assert ov_resp.status_code == 200
+    assert ov_resp.json()["status"] == "approved"
+
+def test_cp9d_expected_version_conflict_and_permissions(client, sales_user, management_user, base_payload):
+    sales_headers = get_auth_headers(sales_user.id)
+    mgmt_headers = get_auth_headers(management_user.id)
+
+    resp = client.post("/api/quotes", json=base_payload, headers=sales_headers)
+    quote_id = resp.json()["id"]
+    version = resp.json()["version"]
+
+    # Submit with wrong version
+    submit_resp = client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": version + 1}, headers=sales_headers)
+    assert submit_resp.status_code == 409
+
+    submit_resp = client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": version}, headers=sales_headers)
+    assert submit_resp.status_code == 200
+
+    # Sales cannot approve
+    approve_resp = client.post(f"/api/quotes/{quote_id}/approve", json={"expected_version": version}, headers=sales_headers)
+    assert approve_resp.status_code == 403
+    
+    # Missing comment on request changes
+    rc_resp = client.post(f"/api/quotes/{quote_id}/request-changes", json={"expected_version": version, "comment": ""}, headers=mgmt_headers)
+    assert rc_resp.status_code == 400
+
+
+def test_cp9d_approval_queue_ordering(client, sales_user, management_user, base_payload, db):
+    sales_headers = get_auth_headers(sales_user.id)
+    mgmt_headers = get_auth_headers(management_user.id)
+
+    # Seed 3 quotes
+    quote_ids = []
+    for _ in range(3):
+        resp = client.post("/api/quotes", json=base_payload, headers=sales_headers)
+        assert resp.status_code == 201
+        quote_id = resp.json()["id"]
+        version = resp.json()["version"]
+        submit_resp = client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": version}, headers=sales_headers)
+        assert submit_resp.status_code == 200
+        quote_ids.append(quote_id)
+
+    # Let's directly manipulate the db records to set is_urgent and updated_at
+    from datetime import datetime, timedelta, UTC
+    q0 = db.query(Quote).filter(Quote.id == quote_ids[0]).first()
+    q1 = db.query(Quote).filter(Quote.id == quote_ids[1]).first()
+    q2 = db.query(Quote).filter(Quote.id == quote_ids[2]).first()
+
+    now = datetime.now(UTC)
+    
+    # Q0: Not urgent, old
+    q0.is_urgent = False
+    q0.updated_at = now - timedelta(days=2)
+
+    # Q1: Urgent, recent
+    q1.is_urgent = True
+    q1.updated_at = now - timedelta(days=1)
+
+    # Q2: Urgent, old
+    q2.is_urgent = True
+    q2.updated_at = now - timedelta(days=2)
+
+    db.commit()
+
+    # The expected order is: Urgent first, then updated_at asc, then id asc.
+    # Q2 is urgent + old (should be 1st)
+    # Q1 is urgent + recent (should be 2nd)
+    # Q0 is not urgent (should be 3rd)
+    
+    queue_resp = client.get("/api/quotes/approval-queue", headers=mgmt_headers)
+    assert queue_resp.status_code == 200
+    queue = queue_resp.json()
+    
+    # Filter just our quotes
+    q_in_queue = [q for q in queue if q["id"] in quote_ids]
+    assert len(q_in_queue) == 3
+    assert q_in_queue[0]["id"] == q2.id
+    assert q_in_queue[1]["id"] == q1.id
+    assert q_in_queue[2]["id"] == q0.id
+
+def test_cp9d_approval_log_creation(client, sales_user, management_user, base_payload, db):
+    sales_headers = get_auth_headers(sales_user.id)
+    mgmt_headers = get_auth_headers(management_user.id)
+
+    resp = client.post("/api/quotes", json=base_payload, headers=sales_headers)
+    assert resp.status_code == 201
+    quote_id = resp.json()["id"]
+    version = resp.json()["version"]
+
+    from backend.app.models.quote import QuoteApprovalLog
+    logs = db.query(QuoteApprovalLog).filter(QuoteApprovalLog.quote_id == quote_id).all()
+    assert len(logs) == 0
+
+    # 1. Submit
+    client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": version, "comment": "Submitting"}, headers=sales_headers)
+    
+    logs = db.query(QuoteApprovalLog).filter(QuoteApprovalLog.quote_id == quote_id).all()
+    assert len(logs) == 1
+    assert logs[0].action == "SUBMIT"
+    assert logs[0].from_status == QuoteStatus.DRAFT
+    assert logs[0].to_status == QuoteStatus.PENDING_APPROVAL
+    assert logs[0].user_id == sales_user.id
+    assert logs[0].comment == "Submitting"
+    assert logs[0].quote_version == version
+
+    # 2. Request Changes
+    client.post(f"/api/quotes/{quote_id}/request-changes", json={"expected_version": version, "comment": "Need changes"}, headers=mgmt_headers)
+    
+    logs = db.query(QuoteApprovalLog).filter(QuoteApprovalLog.quote_id == quote_id).order_by(QuoteApprovalLog.id.asc()).all()
+    assert len(logs) == 2
+    assert logs[1].action == "REQUEST_CHANGES"
+    assert logs[1].from_status == QuoteStatus.PENDING_APPROVAL
+    assert logs[1].to_status == QuoteStatus.CHANGES_REQUESTED
+    assert logs[1].user_id == management_user.id
+    assert logs[1].comment == "Need changes"
+    assert logs[1].quote_version == version
+
+def test_cp9d_approval_log_atomicity(client, sales_user, base_payload, db):
+    sales_headers = get_auth_headers(sales_user.id)
+    
+    resp = client.post("/api/quotes", json=base_payload, headers=sales_headers)
+    quote_id = resp.json()["id"]
+    version = resp.json()["version"]
+
+    import unittest.mock as mock
+    # Mock db.commit to raise an exception
+    with mock.patch("sqlalchemy.orm.Session.commit", side_effect=Exception("Simulated DB Error")):
+        submit_resp = client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": version}, headers=sales_headers)
+        # The exception translates to 500 because it's a generic persistence error
+        assert submit_resp.status_code == 500
+
+    # Verify rollback: Quote is still DRAFT, no logs created
+    db.expire_all()
+    quote = db.query(Quote).filter(Quote.id == quote_id).first()
+    assert quote.status == QuoteStatus.DRAFT
+
+    from backend.app.models.quote import QuoteApprovalLog
+    logs = db.query(QuoteApprovalLog).filter(QuoteApprovalLog.quote_id == quote_id).all()
+    assert len(logs) == 0
+
+def test_cp9d_rejection_of_updates(client, sales_user, base_payload):
+    sales_headers = get_auth_headers(sales_user.id)
+    
+    resp = client.post("/api/quotes", json=base_payload, headers=sales_headers)
+    quote_id = resp.json()["id"]
+    version = resp.json()["version"]
+
+    client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": version}, headers=sales_headers)
+
+    # Attempt PUT
+    update_payload = base_payload.copy()
+    update_payload["expected_version"] = version
+    put_resp = client.put(f"/api/quotes/{quote_id}", json=update_payload, headers=sales_headers)
+    assert put_resp.status_code == 409
+    assert "Only DRAFT or CHANGES_REQUESTED quotes can be edited" in put_resp.json()["detail"]
+
+    # Attempt Recalculate
+    recalc_resp = client.post(f"/api/quotes/{quote_id}/recalculate", json={"expected_version": version, "requirement_data": base_payload["requirement_data"]}, headers=sales_headers)
+    assert recalc_resp.status_code == 409
+    assert "recalculated" in recalc_resp.json()["detail"]
+
+def test_cp9d_version_unchanged_across_lifecycle(client, sales_user, management_user, base_payload):
+    sales_headers = get_auth_headers(sales_user.id)
+    mgmt_headers = get_auth_headers(management_user.id)
+
+    resp = client.post("/api/quotes", json=base_payload, headers=sales_headers)
+    quote_id = resp.json()["id"]
+    initial_version = resp.json()["version"]
+
+    # Submit
+    s_resp = client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": initial_version}, headers=sales_headers)
+    assert s_resp.json()["version"] == initial_version
+
+    # Request Changes
+    rc_resp = client.post(f"/api/quotes/{quote_id}/request-changes", json={"expected_version": initial_version, "comment": "fix"}, headers=mgmt_headers)
+    assert rc_resp.json()["version"] == initial_version
+
+    # Submit again
+    s2_resp = client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": initial_version}, headers=sales_headers)
+    assert s2_resp.json()["version"] == initial_version
+
+    # Override Approve
+    a_resp = client.post(f"/api/quotes/{quote_id}/override-approve", json={"expected_version": initial_version, "comment": "ok"}, headers=mgmt_headers)
+    assert a_resp.json()["version"] == initial_version
+
+def test_cp9d_export_customer_copy_status_rules(client, admin_user, base_payload):
+    """Customer Copy export must require APPROVED status and return 409 otherwise."""
+    headers = get_auth_headers(admin_user.id)
+    
+    # 1. DRAFT
+    resp_create = client.post("/api/quotes", json=base_payload, headers=headers)
+    assert resp_create.status_code == 201
+    q = resp_create.json()
+    version = q["version"]
+    
+    resp = client.get(f"/api/quotes/{q['id']}/export/customer", headers=headers)
+    assert resp.status_code == 409
+    
+    # 2. DRAFT -> PENDING_APPROVAL
+    resp = client.post(f"/api/quotes/{q['id']}/submit", json={"expected_version": version, "comment": "submitting"}, headers=headers)
+    assert resp.status_code == 200, resp.text
+    version = resp.json()["version"]
+    
+    resp = client.get(f"/api/quotes/{q['id']}/export/customer", headers=headers)
+    assert resp.status_code == 409
+    
+    # 3. PENDING_APPROVAL -> CHANGES_REQUESTED
+    resp = client.post(f"/api/quotes/{q['id']}/request-changes", json={"expected_version": version, "comment": "changes"}, headers=headers)
+    assert resp.status_code == 200, resp.text
+    version = resp.json()["version"]
+    
+    resp = client.get(f"/api/quotes/{q['id']}/export/customer", headers=headers)
+    assert resp.status_code == 409
+    
+    # 4. CHANGES_REQUESTED -> APPROVED
+    resp = client.post(f"/api/quotes/{q['id']}/override-approve", json={"expected_version": version, "comment": "approved"}, headers=headers)
+    assert resp.status_code == 200, resp.text
+    version = resp.json()["version"]
+    
+    resp = client.get(f"/api/quotes/{q['id']}/export/customer", headers=headers)
+    assert resp.status_code == 200
+
+def test_cp9d_export_internal_tracking_allow_all_statuses(client, admin_user, base_payload):
+    """Internal and Tracking exports must succeed across all statuses for Management/Admin."""
+    headers = get_auth_headers(admin_user.id)
+    resp_create = client.post("/api/quotes", json=base_payload, headers=headers)
+    assert resp_create.status_code == 201
+    q = resp_create.json()
+    version = q["version"]
+    
+    # Test all statuses sequentially
+    transitions = [
+        (None, None),  # DRAFT initially
+        ("/submit", "submitting"), # PENDING_APPROVAL
+        ("/request-changes", "changes"), # CHANGES_REQUESTED
+        ("/override-approve", "approved"), # APPROVED
+    ]
+    
+    for endpoint, comment in transitions:
+        if endpoint:
+            resp = client.post(f"/api/quotes/{q['id']}{endpoint}", json={"expected_version": version, "comment": comment}, headers=headers)
+            assert resp.status_code == 200, resp.text
+            version = resp.json()["version"]
+        
+        resp_int = client.get(f"/api/quotes/{q['id']}/export/internal", headers=headers)
+        assert resp_int.status_code == 200
+        
+        resp_trk = client.get(f"/api/quotes/{q['id']}/export/tracking", headers=headers)
+        assert resp_trk.status_code == 200

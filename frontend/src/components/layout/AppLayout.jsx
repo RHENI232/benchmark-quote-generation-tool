@@ -42,6 +42,13 @@ export default function AppLayout({ children }) {
                   Quotes
                 </NavLink>
               </li>
+              {hasPermission(PERMISSIONS.FINANCE_TAX_ADMIN) && (
+                <li>
+                  <NavLink to="/approval-queue" className={({ isActive }) => (isActive ? 'active' : '')}>
+                    Approval Queue
+                  </NavLink>
+                </li>
+              )}
               {hasPermission(PERMISSIONS.SUPER_ADMIN) && (
                 <li>
                   <NavLink to="/users" className={({ isActive }) => (isActive ? 'active' : '')}>

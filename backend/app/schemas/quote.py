@@ -24,8 +24,21 @@ class QuoteRecalculate(BaseModel):
 class QuoteUpdate(QuoteCreate):
     expected_version: int
 
-class QuoteSaveAction(BaseModel):
+class QuoteSubmitAction(BaseModel):
     expected_version: int
+    comment: Optional[str] = None
+
+class QuoteApproveAction(BaseModel):
+    expected_version: int
+    comment: Optional[str] = None
+
+class QuoteRequestChangesAction(BaseModel):
+    expected_version: int
+    comment: str
+
+class QuoteOverrideApproveAction(BaseModel):
+    expected_version: int
+    comment: str
 
 class QuoteDeleteAction(BaseModel):
     expected_version: int
@@ -96,3 +109,9 @@ class QuoteSummary(BaseModel):
     created_by_user_id: int
 
     model_config = ConfigDict(from_attributes=True)
+
+class QuoteQueueItem(QuoteSummary):
+    is_urgent: bool
+    total_sell_local: DecimalStr
+    subtotal_cost_usd: Optional[DecimalStr] = None
+    currency_code: str

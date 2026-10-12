@@ -20,8 +20,8 @@ class PricingEngine:
         fetches actual catalog pricing using lookup_key, computes financials,
         and updates the Quote.
         """
-        if quote.status == QuoteStatus.SAVED:
-            raise PricingEngineError("Cannot recalculate a SAVED quote. It is immutable.")
+        if quote.status in (QuoteStatus.PENDING_APPROVAL, QuoteStatus.APPROVED):
+            raise PricingEngineError(f"Cannot recalculate a quote in {quote.status.value.upper()} status. It is immutable.")
 
         region = quote.region
         if not region:

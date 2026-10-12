@@ -1,62 +1,83 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getQuote } from '../api/quoteApi';
+import { getQuote, submitQuote, approveQuote, requestChangesQuote, overrideApproveQuote } from '../api/quoteApi';
 import { regionApi } from '../api/regionApi';
 import { solutionApi } from '../api/solutionApi';
+import { useAuth, PERMISSIONS } from '../auth/AuthContext';
 import '../styles/wizard.css';
 
 export default function QuoteDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { hasPermission } = useAuth();
   const [quote, setQuote] = useState(null);
   const [regions, setRegions] = useState([]);
   const [solutions, setSolutions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Workflow state
+  const [isSubmittingWorkflow, setIsSubmittingWorkflow] = useState(false);
+  const [workflowAction, setWorkflowAction] = useState(null); // 'request_changes' | 'override_approve'
+  const [workflowComment, setWorkflowComment] = useState('');
+  const [conflictError, setConflictError] = useState('');
+
   useEffect(() => {
     let isMounted = true;
-
-    async function fetchQuoteDetails() {
+    const fetchQuoteDetails = async () => {
       try {
         setLoading(true);
         setError(null);
-
         const [quoteData, regionsData, solutionsData] = await Promise.all([
           getQuote(id),
-          regionApi.getRegions().catch(e => {
-            console.warn("Failed to get regions:", e);
-            return [];
-          }),
-          solutionApi.getSolutions().catch(e => {
-            console.warn("Failed to get solutions:", e);
-            return [];
-          })
+          regionApi.getRegions().catch(e => { console.warn("Failed to get regions:", e); return []; }),
+          solutionApi.getSolutions().catch(e => { console.warn("Failed to get solutions:", e); return []; })
         ]);
-
-        if (isMounted) {
-          setQuote(quoteData);
-          setRegions(regionsData);
-          setSolutions(solutionsData);
-          setLoading(false);
-        }
+        if (isMounted) { setQuote(quoteData); setRegions(regionsData); setSolutions(solutionsData); setLoading(false); }
       } catch (err) {
-        if (isMounted) {
-          console.error('Failed to fetch quote details:', err);
-          setError(err.message || 'Failed to load quote details.');
-          setLoading(false);
-        }
+        if (isMounted) { console.error('Failed to fetch quote details:', err); setError(err.message || 'Failed to load quote details.'); setLoading(false); }
       }
-    }
-
-    if (id) {
-      fetchQuoteDetails();
-    }
-
-    return () => {
-      isMounted = false;
     };
+    if (id) { fetchQuoteDetails(); }
+    return () => { isMounted = false; };
   }, [id]);
+
+  const handleWorkflowAction = async (actionType) => {
+    setConflictError('');
+    setIsSubmittingWorkflow(true);
+    try {
+      if (actionType === 'submit') {
+        await submitQuote(id, { expected_version: quote.version });
+      } else if (actionType === 'approve') {
+        await approveQuote(id, { expected_version: quote.version, comment: '' });
+      } else if (actionType === 'request_changes' || actionType === 'override_approve') {
+        if (!workflowComment.trim()) {
+          setConflictError('A comment is required for this action.');
+          setIsSubmittingWorkflow(false);
+          return;
+        }
+        const payload = { expected_version: quote.version, comment: workflowComment.trim() };
+        if (actionType === 'request_changes') {
+          await requestChangesQuote(id, payload);
+        } else {
+          await overrideApproveQuote(id, payload);
+        }
+        setWorkflowAction(null);
+        setWorkflowComment('');
+      }
+      // Refresh the quote
+      const updatedQuote = await getQuote(id);
+      setQuote(updatedQuote);
+    } catch (err) {
+      if (err.status === 409) {
+        setConflictError('The quote was updated by another user. Please refresh the page.');
+      } else {
+        setConflictError(err.message || 'Workflow action failed.');
+      }
+    } finally {
+      setIsSubmittingWorkflow(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -158,9 +179,12 @@ export default function QuoteDetailPage() {
         <div className="meta-item">
           <div className="meta-label">Status</div>
           <div className="meta-value">
-            <span className={`badge ${quote.status === 'SAVED' ? 'badge-success' : (quote.status === 'DRAFT' ? 'badge-warning' : 'badge-neutral')}`}>
-              {quote.status ? quote.status.toUpperCase() : 'UNKNOWN'}
+            <span className={`badge ${quote.status === 'APPROVED' ? 'badge-success' : (quote.status === 'DRAFT' || quote.status === 'PENDING_APPROVAL' || quote.status === 'CHANGES_REQUESTED' ? 'badge-warning' : 'badge-neutral')}`}>
+              {quote.status ? quote.status.toUpperCase().replace('_', ' ') : 'UNKNOWN'}
             </span>
+            {quote.is_urgent && (
+              <span className="badge badge-danger ms-2" style={{ marginLeft: '0.5rem' }}>URGENT</span>
+            )}
           </div>
         </div>
         <div className="meta-item">
@@ -303,6 +327,18 @@ export default function QuoteDetailPage() {
       </div>
       </div>
 
+      {/* WORKFLOW MESSAGES */}
+      {conflictError && (
+        <div className="alert alert-danger mt-3 mb-3">
+          {conflictError}
+          {conflictError.includes('refresh') && (
+            <button className="btn btn-sm btn-outline-danger ms-3" onClick={() => window.location.reload()}>
+              Refresh Page
+            </button>
+          )}
+        </div>
+      )}
+
       {/* BUTTON AREA */}
       <div className="preview-actions">
         <div className="action-left">
@@ -310,22 +346,100 @@ export default function QuoteDetailPage() {
             type="button"
             className="btn btn-secondary btn-lg"
             onClick={() => navigate('/quotes')}
+            disabled={isSubmittingWorkflow}
           >
             &larr; Back to Quotes
           </button>
         </div>
-        <div className="action-right">
+        <div className="action-right" style={{ display: 'flex', gap: '0.5rem' }}>
           {quote.status === 'draft' && (
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary btn-lg"
+                onClick={() => navigate(`/quotes/${quote.id}/edit`)}
+                disabled={isSubmittingWorkflow}
+              >
+                Edit Draft
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary btn-lg"
+                onClick={() => handleWorkflowAction('submit')}
+                disabled={isSubmittingWorkflow}
+              >
+                Submit for Approval
+              </button>
+            </>
+          )}
+          {quote.status === 'pending_approval' && hasPermission(PERMISSIONS.FINANCE_TAX_ADMIN) && (
+            <>
+              <button
+                type="button"
+                className="btn btn-danger btn-lg"
+                onClick={() => setWorkflowAction('request_changes')}
+                disabled={isSubmittingWorkflow}
+              >
+                Request Changes
+              </button>
+              <button
+                type="button"
+                className="btn btn-success btn-lg"
+                onClick={() => handleWorkflowAction('approve')}
+                disabled={isSubmittingWorkflow}
+              >
+                Approve
+              </button>
+            </>
+          )}
+          {quote.status === 'pending_approval' && hasPermission(PERMISSIONS.SUPER_ADMIN) && (
             <button
               type="button"
-              className="btn btn-primary btn-lg"
-              onClick={() => navigate(`/quotes/${quote.id}/edit`)}
+              className="btn btn-warning btn-lg"
+              onClick={() => setWorkflowAction('override_approve')}
+              disabled={isSubmittingWorkflow}
             >
-              Edit Draft
+              Override Approve
             </button>
           )}
         </div>
       </div>
+
+      {/* WORKFLOW MODAL */}
+      {workflowAction && (
+        <div className="modal-backdrop" style={{ display: 'block', backgroundColor: 'rgba(0,0,0,0.5)', position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 1040 }}>
+          <div className="modal" style={{ display: 'block', zIndex: 1050 }} tabIndex="-1">
+            <div className="modal-dialog">
+              <div className="modal-content">
+                <div className="modal-header">
+                  <h5 className="modal-title">
+                    {workflowAction === 'request_changes' ? 'Request Changes' : 'Override Approve'}
+                  </h5>
+                  <button type="button" className="btn-close" onClick={() => { setWorkflowAction(null); setWorkflowComment(''); }}></button>
+                </div>
+                <div className="modal-body">
+                  <div className="form-group">
+                    <label>Reason / Comment (Required)</label>
+                    <textarea
+                      className="form-control"
+                      rows="3"
+                      value={workflowComment}
+                      onChange={(e) => setWorkflowComment(e.target.value)}
+                      placeholder="Please enter a required reason..."
+                    ></textarea>
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-secondary" onClick={() => { setWorkflowAction(null); setWorkflowComment(''); }} disabled={isSubmittingWorkflow}>Cancel</button>
+                  <button type="button" className={`btn ${workflowAction === 'request_changes' ? 'btn-danger' : 'btn-warning'}`} onClick={() => handleWorkflowAction(workflowAction)} disabled={!workflowComment.trim() || isSubmittingWorkflow}>
+                    {isSubmittingWorkflow ? 'Submitting...' : 'Confirm'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

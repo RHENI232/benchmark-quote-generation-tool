@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { previewQuote, createQuote, saveQuoteStatus, updateQuote } from '../../api/quoteApi';
+import { previewQuote, createQuote, submitQuote, updateQuote } from '../../api/quoteApi';
 import { regionApi } from '../../api/regionApi';
 import { solutionApi } from '../../api/solutionApi';
 
@@ -75,16 +75,16 @@ export default function QuotePreviewStep({ draftQuote, onBack }) {
         payload.expected_version = draftQuote.version;
         const updated = await updateQuote(draftQuote.id, payload);
         createdQuoteId = updated.id;
-        createdQuoteVersion = updated.version;
         quoteRef = updated.quote_ref_no;
+        createdQuoteVersion = updated.version;
       } else {
         const created = await createQuote(payload);
         createdQuoteId = created.id;
-        createdQuoteVersion = created.version;
         quoteRef = created.quote_ref_no;
+        createdQuoteVersion = created.version;
       }
 
-      await saveQuoteStatus(createdQuoteId, createdQuoteVersion);
+      await submitQuote(createdQuoteId, { expected_version: createdQuoteVersion });
 
       localStorage.removeItem('quote_wizard_backup');
       navigate('/quotes');
@@ -262,8 +262,8 @@ export default function QuotePreviewStep({ draftQuote, onBack }) {
         <div className="meta-item">
           <div className="meta-label">Status</div>
           <div className="meta-value">
-            <span className={`badge ${previewData.status === 'SAVED' ? 'badge-success' : (previewData.status === 'DRAFT' ? 'badge-warning' : 'badge-neutral')}`}>
-              {previewData.status ? previewData.status.toUpperCase() : 'PREVIEW'}
+            <span className={`badge ${previewData.status === 'APPROVED' ? 'badge-success' : (previewData.status === 'DRAFT' || previewData.status === 'PENDING_APPROVAL' || previewData.status === 'CHANGES_REQUESTED' ? 'badge-warning' : 'badge-neutral')}`}>
+              {previewData.status ? previewData.status.toUpperCase().replace('_', ' ') : 'PREVIEW'}
             </span>
           </div>
         </div>
@@ -430,7 +430,7 @@ export default function QuotePreviewStep({ draftQuote, onBack }) {
             onClick={handleSaveFinal}
             disabled={isSaving}
           >
-            {isSaving && saveAction === 'final' ? 'Finalizing...' : 'Save Final Quote'}
+            {isSaving && saveAction === 'final' ? 'Submitting...' : 'Submit for Approval'}
           </button>
         </div>
       </div>

@@ -152,13 +152,35 @@ def test_pricing_engine_invalid_fx_blocks(db, base_data):
     with pytest.raises(PricingEngineError, match="valid positive fx_rate_to_usd"):
         PricingEngine.calculate_and_save_quote(db, quote, payload, bom)
 
-def test_pricing_engine_saved_quote_immutable(db, base_data):
-    quote = create_quote(db, base_data, status=QuoteStatus.SAVED)
+def test_pricing_engine_draft_recalculation_succeeds(db, base_data):
+    quote = create_quote(db, base_data, status=QuoteStatus.DRAFT)
     payload = RequirementPayload(number_of_studios=1, studios=[StudioRequirement(studio_index=0, studio_type="Real Set", number_of_engines=0)])
     bom = []
+    PricingEngine.calculate_and_save_quote(db, quote, payload, bom)
+    assert quote.subtotal_sell_usd == Decimal("0.0")
 
-    with pytest.raises(PricingEngineError, match="immutable"):
+def test_pricing_engine_changes_requested_recalculation_succeeds(db, base_data):
+    quote = create_quote(db, base_data, status=QuoteStatus.CHANGES_REQUESTED)
+    payload = RequirementPayload(number_of_studios=1, studios=[StudioRequirement(studio_index=0, studio_type="Real Set", number_of_engines=0)])
+    bom = []
+    PricingEngine.calculate_and_save_quote(db, quote, payload, bom)
+    assert quote.subtotal_sell_usd == Decimal("0.0")
+
+def test_pricing_engine_pending_approval_quote_immutable(db, base_data):
+    quote = create_quote(db, base_data, status=QuoteStatus.PENDING_APPROVAL)
+    payload = RequirementPayload(number_of_studios=1, studios=[StudioRequirement(studio_index=0, studio_type="Real Set", number_of_engines=0)])
+    bom = []
+    with pytest.raises(PricingEngineError) as excinfo:
         PricingEngine.calculate_and_save_quote(db, quote, payload, bom)
+    assert "PENDING_APPROVAL" in str(excinfo.value)
+
+def test_pricing_engine_approved_quote_immutable(db, base_data):
+    quote = create_quote(db, base_data, status=QuoteStatus.APPROVED)
+    payload = RequirementPayload(number_of_studios=1, studios=[StudioRequirement(studio_index=0, studio_type="Real Set", number_of_engines=0)])
+    bom = []
+    with pytest.raises(PricingEngineError) as excinfo:
+        PricingEngine.calculate_and_save_quote(db, quote, payload, bom)
+    assert "APPROVED" in str(excinfo.value)
 
 def test_pricing_engine_invalid_lookup_key(db, base_data):
     quote = create_quote(db, base_data)

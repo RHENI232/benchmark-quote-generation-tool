@@ -35,9 +35,34 @@ export async function updateQuote(quoteId, payload) {
   });
 }
 
-export async function saveQuoteStatus(quoteId, expectedVersion) {
-  return fetchClient(`/api/quotes/${quoteId}/save`, {
+export async function submitQuote(quoteId, payload) {
+  return fetchClient(`/api/quotes/${quoteId}/submit`, {
     method: 'POST',
-    body: { expected_version: expectedVersion },
+    body: payload,
   });
+}
+
+export async function approveQuote(quoteId, payload) {
+  return fetchClient(`/api/quotes/${quoteId}/approve`, {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export async function requestChangesQuote(quoteId, payload) {
+  return fetchClient(`/api/quotes/${quoteId}/request-changes`, {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export async function overrideApproveQuote(quoteId, payload) {
+  return fetchClient(`/api/quotes/${quoteId}/override-approve`, {
+    method: 'POST',
+    body: payload,
+  });
+}
+
+export async function getApprovalQueue() {
+  return fetchClient('/api/quotes/approval-queue');
 }

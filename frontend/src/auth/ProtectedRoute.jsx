@@ -3,8 +3,8 @@ import { Navigate, Outlet } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import AppLayout from '../components/layout/AppLayout';
 
-export default function ProtectedRoute({ roles }) {
-  const { user, isLoading, hasRole } = useAuth();
+export default function ProtectedRoute({ roles, requiredPermission }) {
+  const { user, isLoading, hasRole, hasPermission } = useAuth();
 
   if (isLoading) {
     return <div className="loading-container">Loading application...</div>;
@@ -26,6 +26,21 @@ export default function ProtectedRoute({ roles }) {
       </AppLayout>
     );
   }
+
+  if (requiredPermission && !hasPermission(requiredPermission)) {
+    return (
+      <AppLayout>
+        <div className="container mt-5">
+          <div className="alert alert-danger">
+            <h4>Access Denied</h4>
+            <p>You do not have permission to view this page.</p>
+          </div>
+        </div>
+      </AppLayout>
+    );
+  }
+
+
 
   return (
     <AppLayout>
