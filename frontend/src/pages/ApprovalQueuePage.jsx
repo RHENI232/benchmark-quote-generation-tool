@@ -55,6 +55,20 @@ export default function ApprovalQueuePage() {
     return region ? region.country_name : regionId;
   };
 
+  const formatMoney = (amount, currencyCode) => {
+    if (amount == null || amount === '') return 'N/A';
+    const num = parseFloat(amount);
+    if (isNaN(num)) return 'N/A';
+    try {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: currencyCode || 'USD'
+      }).format(num);
+    } catch {
+      return `${currencyCode || 'USD'} ${num.toFixed(2)}`;
+    }
+  };
+
   return (
     <div className="quotes-container">
       <PageHeader
@@ -106,9 +120,7 @@ export default function ApprovalQueuePage() {
                   <td>{getRegionName(quote.region_id)}</td>
                   {hasPermission(PERMISSIONS.COST_VISIBILITY) && (
                     <td>
-                      {quote.total_sell_usd != null
-                        ? `$${quote.total_sell_usd.toLocaleString()}`
-                        : 'N/A'}
+                      {formatMoney(quote.total_sell_local, quote.currency_code)}
                     </td>
                   )}
                   <td>{formatDate(quote.updated_at || quote.created_at)}</td>
