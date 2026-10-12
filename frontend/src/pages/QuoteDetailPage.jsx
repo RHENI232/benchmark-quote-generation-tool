@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getQuote, getQuoteHistory, submitQuote, approveQuote, requestChangesQuote, overrideApproveQuote } from '../api/quoteApi';
+import { getQuote, getQuoteHistory, submitQuote, approveQuote, requestChangesQuote, overrideApproveQuote, setQuoteUrgency } from '../api/quoteApi';
 import { regionApi } from '../api/regionApi';
 import { solutionApi } from '../api/solutionApi';
 import { useAuth, PERMISSIONS } from '../auth/AuthContext';
@@ -59,6 +59,10 @@ export default function QuoteDetailPage() {
         await submitQuote(id, { expected_version: quote.version });
       } else if (actionType === 'approve') {
         await approveQuote(id, { expected_version: quote.version, comment: '' });
+      } else if (actionType === 'mark_urgent') {
+        await setQuoteUrgency(id, { expected_version: quote.version, is_urgent: true });
+      } else if (actionType === 'remove_urgent') {
+        await setQuoteUrgency(id, { expected_version: quote.version, is_urgent: false });
       } else if (actionType === 'request_changes' || actionType === 'override_approve') {
         if (!workflowComment.trim()) {
           setConflictError('A comment is required for this action.');
@@ -402,11 +406,13 @@ export default function QuoteDetailPage() {
                       <span className={`badge ${
                         log.action === 'APPROVE' || log.action === 'OVERRIDE_APPROVE'
                           ? 'badge-success'
-                          : log.action === 'REQUEST_CHANGES'
+                          : log.action === 'REQUEST_CHANGES' || log.action === 'MARK_URGENT'
                           ? 'badge-danger'
+                          : log.action === 'UNMARK_URGENT'
+                          ? 'badge-secondary'
                           : 'badge-warning'
                       }`}>
-                        {log.action.replace('_', ' ')}
+                        {log.action.replace(/_/g, ' ')}
                       </span>
                     </td>
                     <td className="text-sm font-medium text-gray-900">
@@ -450,6 +456,27 @@ export default function QuoteDetailPage() {
           </button>
         </div>
         <div className="action-right" style={{ display: 'flex', gap: '0.5rem' }}>
+          {(currentStatus === 'pending_approval' || currentStatus === 'changes_requested') && hasPermission(PERMISSIONS.FINANCE_TAX_ADMIN) && (
+            quote.is_urgent ? (
+              <button
+                type="button"
+                className="btn btn-outline-secondary btn-lg"
+                onClick={() => handleWorkflowAction('remove_urgent')}
+                disabled={isSubmittingWorkflow}
+              >
+                Remove Urgent
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-outline-danger btn-lg"
+                onClick={() => handleWorkflowAction('mark_urgent')}
+                disabled={isSubmittingWorkflow}
+              >
+                Mark Urgent
+              </button>
+            )
+          )}
           {(currentStatus === 'draft' || currentStatus === 'changes_requested') && (
             <>
               <button

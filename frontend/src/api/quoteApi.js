@@ -70,3 +70,10 @@ export async function getApprovalQueue() {
 export async function getQuoteHistory(quoteId) {
   return fetchClient(`/api/quotes/${quoteId}/history`);
 }
+
+export async function setQuoteUrgency(quoteId, payload) {
+  return fetchClient(`/api/quotes/${quoteId}/urgent`, {
+    method: 'POST',
+    body: payload,
+  });
+}

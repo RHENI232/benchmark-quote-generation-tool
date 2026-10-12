@@ -40,6 +40,11 @@ class QuoteOverrideApproveAction(BaseModel):
     expected_version: int
     comment: str
 
+class QuoteUrgentAction(BaseModel):
+    expected_version: int
+    is_urgent: bool
+    comment: Optional[str] = None
+
 class QuoteDeleteAction(BaseModel):
     expected_version: int
 
@@ -91,6 +96,7 @@ class QuoteResponse(QuoteBase):
     created_at: datetime
     updated_at: datetime
     status: QuoteStatus
+    is_urgent: bool = False
     currency_code: str
 
     fx_rate_to_usd: DecimalStr

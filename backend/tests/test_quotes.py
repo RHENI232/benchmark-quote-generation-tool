@@ -1224,3 +1224,403 @@ def test_cp9d_sales_edit_and_resubmit_changes_requested_flow(client, sales_user,
     assert hist[2]["action"] == "SUBMIT"
     assert hist[2]["quote_version"] == v2
     assert hist[2]["comment"] == "Resubmitting with updated details"
+
+
+# --- Phase 11 Urgent Quote Management Tests ---
+
+def test_phase11_management_mark_and_unmark_urgent(client, sales_user, management_user, base_payload):
+    sales_headers = get_auth_headers(sales_user.id)
+    mgmt_headers = get_auth_headers(management_user.id)
+
+    # 1. Sales creates draft and submits -> PENDING_APPROVAL
+    create_resp = client.post("/api/quotes", json=base_payload, headers=sales_headers)
+    assert create_resp.status_code == 201
+    q = create_resp.json()
+    quote_id = q["id"]
+    v1 = q["version"]
+    assert q["is_urgent"] is False
+
+    sub_resp = client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": v1}, headers=sales_headers)
+    assert sub_resp.status_code == 200
+
+    # 2. Management marks quote as urgent
+    mark_resp = client.post(
+        f"/api/quotes/{quote_id}/urgent",
+        json={"expected_version": v1, "is_urgent": True, "comment": "High priority customer request"},
+        headers=mgmt_headers,
+    )
+    assert mark_resp.status_code == 200
+    marked_data = mark_resp.json()
+    assert marked_data["is_urgent"] is True
+    assert marked_data["version"] == v1  # Content/pricing version must not increment
+
+    # 3. GET /api/quotes/{id} returns is_urgent=True
+    get_resp = client.get(f"/api/quotes/{quote_id}", headers=mgmt_headers)
+    assert get_resp.status_code == 200
+    assert get_resp.json()["is_urgent"] is True
+
+    # 4. Check approval history has MARK_URGENT
+    hist_resp = client.get(f"/api/quotes/{quote_id}/history", headers=mgmt_headers)
+    assert hist_resp.status_code == 200
+    hist = hist_resp.json()
+    assert len(hist) == 2
+    assert hist[1]["action"] == "MARK_URGENT"
+    assert hist[1]["comment"] == "High priority customer request"
+    assert hist[1]["user_id"] == management_user.id
+
+    # 5. Management unmarks urgent
+    unmark_resp = client.post(
+        f"/api/quotes/{quote_id}/urgent",
+        json={"expected_version": v1, "is_urgent": False},
+        headers=mgmt_headers,
+    )
+    assert unmark_resp.status_code == 200
+    unmarked_data = unmark_resp.json()
+    assert unmarked_data["is_urgent"] is False
+    assert unmarked_data["version"] == v1
+
+    # 6. Check approval history has UNMARK_URGENT with default comment
+    hist_resp2 = client.get(f"/api/quotes/{quote_id}/history", headers=mgmt_headers)
+    assert hist_resp2.status_code == 200
+    hist2 = hist_resp2.json()
+    assert len(hist2) == 3
+    assert hist2[2]["action"] == "UNMARK_URGENT"
+    assert hist2[2]["comment"] == "Urgency removed"
+
+
+def test_phase11_admin_mark_urgent(client, sales_user, admin_user, base_payload):
+    sales_headers = get_auth_headers(sales_user.id)
+    admin_headers = get_auth_headers(admin_user.id)
+
+    create_resp = client.post("/api/quotes", json=base_payload, headers=sales_headers)
+    quote_id = create_resp.json()["id"]
+    v1 = create_resp.json()["version"]
+
+    client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": v1}, headers=sales_headers)
+
+    resp = client.post(
+        f"/api/quotes/{quote_id}/urgent",
+        json={"expected_version": v1, "is_urgent": True, "comment": "Admin escalated"},
+        headers=admin_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["is_urgent"] is True
+
+
+def test_phase11_mark_urgent_changes_requested_status(client, sales_user, management_user, base_payload):
+    sales_headers = get_auth_headers(sales_user.id)
+    mgmt_headers = get_auth_headers(management_user.id)
+
+    create_resp = client.post("/api/quotes", json=base_payload, headers=sales_headers)
+    quote_id = create_resp.json()["id"]
+    v1 = create_resp.json()["version"]
+
+    client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": v1}, headers=sales_headers)
+    client.post(f"/api/quotes/{quote_id}/request-changes", json={"expected_version": v1, "comment": "Needs review"}, headers=mgmt_headers)
+
+    # Quote is in CHANGES_REQUESTED
+    get_resp = client.get(f"/api/quotes/{quote_id}", headers=mgmt_headers)
+    assert get_resp.json()["status"] == "changes_requested"
+
+    # Marking urgent must be permitted in CHANGES_REQUESTED
+    resp = client.post(
+        f"/api/quotes/{quote_id}/urgent",
+        json={"expected_version": v1, "is_urgent": True, "comment": "Urgent correction required"},
+        headers=mgmt_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["is_urgent"] is True
+
+
+def test_phase11_rbac_sales_and_catalog_forbidden(client, sales_user, catalog_user, management_user, base_payload):
+    sales_headers = get_auth_headers(sales_user.id)
+    cat_headers = get_auth_headers(catalog_user.id)
+    mgmt_headers = get_auth_headers(management_user.id)
+
+    create_resp = client.post("/api/quotes", json=base_payload, headers=sales_headers)
+    quote_id = create_resp.json()["id"]
+    v1 = create_resp.json()["version"]
+    client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": v1}, headers=sales_headers)
+
+    # Sales -> 403 Forbidden
+    sales_urgent = client.post(
+        f"/api/quotes/{quote_id}/urgent",
+        json={"expected_version": v1, "is_urgent": True},
+        headers=sales_headers,
+    )
+    assert sales_urgent.status_code == 403
+
+    # Catalog Entry -> 403 Forbidden
+    cat_urgent = client.post(
+        f"/api/quotes/{quote_id}/urgent",
+        json={"expected_version": v1, "is_urgent": True},
+        headers=cat_headers,
+    )
+    assert cat_urgent.status_code == 403
+
+    # Unauthenticated -> 403 Forbidden
+    unauth_urgent = client.post(
+        f"/api/quotes/{quote_id}/urgent",
+        json={"expected_version": v1, "is_urgent": True},
+    )
+    assert unauth_urgent.status_code == 403
+
+
+def test_phase11_sales_create_and_edit_cannot_set_is_urgent(client, sales_user, base_payload):
+    sales_headers = get_auth_headers(sales_user.id)
+
+    # 1. Sales creates quote with injected is_urgent=True
+    injected_create = base_payload.copy()
+    injected_create["is_urgent"] = True
+    create_resp = client.post("/api/quotes", json=injected_create, headers=sales_headers)
+    assert create_resp.status_code == 201
+    q = create_resp.json()
+    assert q["is_urgent"] is False  # Must be ignored / default to False
+
+    quote_id = q["id"]
+    v1 = q["version"]
+
+    # 2. Sales updates quote via PUT with injected is_urgent=True
+    injected_update = base_payload.copy()
+    injected_update["expected_version"] = v1
+    injected_update["is_urgent"] = True
+    put_resp = client.put(f"/api/quotes/{quote_id}", json=injected_update, headers=sales_headers)
+    assert put_resp.status_code == 200
+    assert put_resp.json()["is_urgent"] is False
+
+    # 3. Sales submits quote with injected is_urgent=True
+    v2 = put_resp.json()["version"]
+    sub_resp = client.post(
+        f"/api/quotes/{quote_id}/submit",
+        json={"expected_version": v2, "is_urgent": True},
+        headers=sales_headers,
+    )
+    assert sub_resp.status_code == 200
+    assert sub_resp.json()["is_urgent"] is False
+
+
+def test_phase11_invalid_status_rejects_urgent_409(client, sales_user, management_user, base_payload):
+    sales_headers = get_auth_headers(sales_user.id)
+    mgmt_headers = get_auth_headers(management_user.id)
+
+    # 1. Quote in DRAFT status
+    create_resp = client.post("/api/quotes", json=base_payload, headers=sales_headers)
+    quote_id = create_resp.json()["id"]
+    v1 = create_resp.json()["version"]
+
+    draft_urgent = client.post(
+        f"/api/quotes/{quote_id}/urgent",
+        json={"expected_version": v1, "is_urgent": True},
+        headers=mgmt_headers,
+    )
+    assert draft_urgent.status_code == 409
+    assert "draft" in draft_urgent.json()["detail"].lower()
+
+    # 2. Quote in APPROVED status
+    client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": v1}, headers=sales_headers)
+    client.post(f"/api/quotes/{quote_id}/approve", json={"expected_version": v1}, headers=mgmt_headers)
+
+    approved_urgent = client.post(
+        f"/api/quotes/{quote_id}/urgent",
+        json={"expected_version": v1, "is_urgent": True},
+        headers=mgmt_headers,
+    )
+    assert approved_urgent.status_code == 409
+    assert "approved" in approved_urgent.json()["detail"].lower()
+
+
+def test_phase11_concurrency_expected_version_mismatch_409(client, sales_user, management_user, base_payload):
+    sales_headers = get_auth_headers(sales_user.id)
+    mgmt_headers = get_auth_headers(management_user.id)
+
+    create_resp = client.post("/api/quotes", json=base_payload, headers=sales_headers)
+    quote_id = create_resp.json()["id"]
+    v1 = create_resp.json()["version"]
+    client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": v1}, headers=sales_headers)
+
+    stale_resp = client.post(
+        f"/api/quotes/{quote_id}/urgent",
+        json={"expected_version": v1 + 99, "is_urgent": True},
+        headers=mgmt_headers,
+    )
+    assert stale_resp.status_code == 409
+    assert "Version mismatch" in stale_resp.json()["detail"]
+
+
+def test_phase11_idempotency_does_not_duplicate_audit_logs(client, sales_user, management_user, base_payload):
+    sales_headers = get_auth_headers(sales_user.id)
+    mgmt_headers = get_auth_headers(management_user.id)
+
+    create_resp = client.post("/api/quotes", json=base_payload, headers=sales_headers)
+    quote_id = create_resp.json()["id"]
+    v1 = create_resp.json()["version"]
+    client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": v1}, headers=sales_headers)
+
+    # First call: marks urgent -> creates audit log
+    resp1 = client.post(
+        f"/api/quotes/{quote_id}/urgent",
+        json={"expected_version": v1, "is_urgent": True, "comment": "Escalated"},
+        headers=mgmt_headers,
+    )
+    assert resp1.status_code == 200
+
+    hist_resp1 = client.get(f"/api/quotes/{quote_id}/history", headers=mgmt_headers)
+    assert len(hist_resp1.json()) == 2
+
+    # Second call with same state (is_urgent=True) -> idempotent, returns 200 without creating log
+    resp2 = client.post(
+        f"/api/quotes/{quote_id}/urgent",
+        json={"expected_version": v1, "is_urgent": True, "comment": "Repeated request"},
+        headers=mgmt_headers,
+    )
+    assert resp2.status_code == 200
+    assert resp2.json()["is_urgent"] is True
+
+    hist_resp2 = client.get(f"/api/quotes/{quote_id}/history", headers=mgmt_headers)
+    assert len(hist_resp2.json()) == 2  # Still 2, no duplicate log!
+
+
+def test_phase11_queue_urgent_quotes_sorted_first(client, sales_user, management_user, base_payload, db):
+    sales_headers = get_auth_headers(sales_user.id)
+    mgmt_headers = get_auth_headers(management_user.id)
+
+    # Create Quote A (non-urgent)
+    resp_a = client.post("/api/quotes", json=base_payload, headers=sales_headers)
+    id_a = resp_a.json()["id"]
+    v_a = resp_a.json()["version"]
+    client.post(f"/api/quotes/{id_a}/submit", json={"expected_version": v_a}, headers=sales_headers)
+
+    # Create Quote B (will be marked urgent)
+    resp_b = client.post("/api/quotes", json=base_payload, headers=sales_headers)
+    id_b = resp_b.json()["id"]
+    v_b = resp_b.json()["version"]
+    client.post(f"/api/quotes/{id_b}/submit", json={"expected_version": v_b}, headers=sales_headers)
+
+    # Management marks Quote B as urgent
+    client.post(
+        f"/api/quotes/{id_b}/urgent",
+        json={"expected_version": v_b, "is_urgent": True},
+        headers=mgmt_headers,
+    )
+
+    # Fetch approval queue
+    queue_resp = client.get("/api/quotes/approval-queue", headers=mgmt_headers)
+    assert queue_resp.status_code == 200
+    items = queue_resp.json()
+
+    # Find the positions of Quote A and Quote B in queue
+    pos_a = next(i for i, item in enumerate(items) if item["id"] == id_a)
+    pos_b = next(i for i, item in enumerate(items) if item["id"] == id_b)
+
+    # Urgent Quote B must be listed ahead of non-urgent Quote A
+    assert pos_b < pos_a
+    item_b = items[pos_b]
+    assert item_b["is_urgent"] is True
+
+def test_phase11_concurrent_urgency_requests_idempotent(engine):
+    """
+    Genuine concurrency regression test:
+    Uses two independent PostgreSQL database connections and a threading Barrier
+    to ensure two requests attempt to mark the same pending quote urgent simultaneously in parallel threads.
+    Verifies that row-level locking (.with_for_update()) serializes the updates,
+    both requests return 200/success with is_urgent=True, and exactly one MARK_URGENT audit record is created.
+    """
+    import threading
+    from decimal import Decimal
+    from sqlalchemy.orm import sessionmaker
+    from backend.app.models.quote import Quote, QuoteStatus, QuoteApprovalLog
+    from backend.app.models.user import User, RoleTier
+    from backend.app.models.solution import Solution
+    from backend.app.models.region import Region
+    from backend.app.api.routers.quotes import set_quote_urgency
+    from backend.app.schemas.quote import QuoteUrgentAction
+
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    setup_db = SessionLocal()
+
+    quote_id = None
+    try:
+        # Clean up any leftover from previous runs if any
+        setup_db.query(QuoteApprovalLog).filter(QuoteApprovalLog.quote.has(Quote.quote_ref_no == "BBS-9999-CONCUR")).delete(synchronize_session=False)
+        setup_db.query(Quote).filter(Quote.quote_ref_no == "BBS-9999-CONCUR").delete(synchronize_session=False)
+        setup_db.commit()
+
+        solution = setup_db.query(Solution).first()
+        region = setup_db.query(Region).first()
+        mgmt_user = setup_db.query(User).filter(User.role_tier == RoleTier.MANAGEMENT).first()
+        if not mgmt_user:
+            mgmt_user = setup_db.query(User).filter(User.role_tier == RoleTier.ADMIN).first()
+
+        mgmt_user_id = mgmt_user.id
+
+        quote = Quote(
+            quote_ref_no="BBS-9999-CONCUR",
+            solution_id=solution.id,
+            region_id=region.id,
+            client_name="Concurrent Test Client",
+            status=QuoteStatus.PENDING_APPROVAL,
+            version=1,
+            is_urgent=False,
+            requirement_data={"studios": []},
+            created_by_user_id=mgmt_user_id,
+            last_edited_by_user_id=mgmt_user_id,
+            currency_code=region.currency_code,
+            subtotal_sell_usd=Decimal("1000.00"),
+            subtotal_cost_usd=Decimal("800.00"),
+            tax_amount=Decimal("0.00"),
+            total_sell_local=Decimal("1000.00"),
+            fx_rate_to_usd=Decimal("1.00"),
+        )
+        setup_db.add(quote)
+        setup_db.commit()
+        setup_db.refresh(quote)
+        quote_id = quote.id
+    finally:
+        setup_db.close()
+
+    barrier = threading.Barrier(2)
+    results = []
+
+    def worker(worker_id):
+        db_sess = SessionLocal()
+        try:
+            worker_user = db_sess.query(User).filter(User.id == mgmt_user_id).first()
+            payload = QuoteUrgentAction(expected_version=1, is_urgent=True, comment=f"Worker {worker_id}")
+            barrier.wait()
+            res = set_quote_urgency(quote_id=quote_id, payload=payload, db=db_sess, current_user=worker_user)
+            results.append((worker_id, "SUCCESS", res))
+        except Exception as e:
+            results.append((worker_id, "ERROR", e))
+        finally:
+            db_sess.close()
+
+    try:
+        t1 = threading.Thread(target=worker, args=(1,))
+        t2 = threading.Thread(target=worker, args=(2,))
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+
+        assert len(results) == 2
+        for wid, status, val in results:
+            assert status == "SUCCESS", f"Worker {wid} failed: {val}"
+            assert val["is_urgent"] is True
+
+        check_db = SessionLocal()
+        try:
+            logs = check_db.query(QuoteApprovalLog).filter(
+                QuoteApprovalLog.quote_id == quote_id,
+                QuoteApprovalLog.action == "MARK_URGENT"
+            ).all()
+            assert len(logs) == 1, f"Expected exactly 1 MARK_URGENT log, found {len(logs)}"
+        finally:
+            check_db.close()
+    finally:
+        cleanup_db = SessionLocal()
+        try:
+            cleanup_db.query(QuoteApprovalLog).filter(QuoteApprovalLog.quote_id == quote_id).delete(synchronize_session=False)
+            cleanup_db.query(Quote).filter(Quote.id == quote_id).delete(synchronize_session=False)
+            cleanup_db.commit()
+        finally:
+            cleanup_db.close()

@@ -15,7 +15,7 @@ from backend.app.models.solution import Solution
 from backend.app.schemas.quote import (
     QuoteCreate, QuoteResponse, QuoteUpdate, QuoteDeleteAction, QuoteRecalculate, QuoteSummary,
     QuoteQueueItem, QuoteSubmitAction, QuoteApproveAction, QuoteRequestChangesAction, QuoteOverrideApproveAction,
-    QuoteApprovalLogResponse
+    QuoteUrgentAction, QuoteApprovalLogResponse
 )
 from backend.app.schemas.requirement import RequirementPayload
 from backend.app.services.engines.requirement_engine import parse_and_evaluate_requirements, RequirementEngineError
@@ -354,6 +354,52 @@ def override_approve_quote(quote_id: int, payload: QuoteOverrideApproveAction, d
         else:
             logger.error(f"Error retrieving quote after successful override-approve: {e}")
             raise HTTPException(status_code=500, detail="The quote was approved successfully, but an error occurred retrieving the updated data")
+
+@router.post("/{quote_id}/urgent", response_model=QuoteResponse)
+def set_quote_urgency(
+    quote_id: int,
+    payload: QuoteUrgentAction,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("finance_tax_admin"))
+):
+    committed = False
+    try:
+        quote = db.query(Quote).filter(Quote.id == quote_id).with_for_update().first()
+        if not quote or quote.deleted_at is not None:
+            raise HTTPException(status_code=404, detail="Quote not found")
+        if payload.expected_version != quote.version:
+            raise HTTPException(status_code=409, detail="Version mismatch")
+        if quote.status not in (QuoteStatus.PENDING_APPROVAL, QuoteStatus.CHANGES_REQUESTED):
+            raise HTTPException(status_code=409, detail=f"Urgency cannot be changed for quote in {quote.status.value} status")
+
+        # Idempotent: if already in requested state, do not duplicate audit logs
+        if quote.is_urgent == payload.is_urgent:
+            resp = QuoteResponse.model_validate(quote, from_attributes=True).model_dump()
+            return mask_quote_financials(resp, current_user)
+
+        quote.is_urgent = payload.is_urgent
+        quote.last_edited_by_user_id = current_user.id
+
+        action = "MARK_URGENT" if payload.is_urgent else "UNMARK_URGENT"
+        default_comment = "Marked as urgent" if payload.is_urgent else "Urgency removed"
+        comment = payload.comment.strip() if (payload.comment and payload.comment.strip()) else default_comment
+
+        _log_approval(db, quote, action, quote.status, quote.status, current_user.id, comment)
+        db.commit()
+        committed = True
+        db.refresh(quote)
+        resp = QuoteResponse.model_validate(quote, from_attributes=True).model_dump()
+        return mask_quote_financials(resp, current_user)
+    except HTTPException:
+        raise
+    except Exception as e:
+        if not committed:
+            db.rollback()
+            logger.error(f"Error setting quote urgency: {e}")
+            raise HTTPException(status_code=500, detail="An unexpected error occurred while processing the request")
+        else:
+            logger.error(f"Error retrieving quote after setting urgency: {e}")
+            raise HTTPException(status_code=500, detail="Urgency was updated successfully, but an error occurred retrieving the updated data")
 
 @router.get("/{quote_id}/history", response_model=List[QuoteApprovalLogResponse])
 def get_quote_history(quote_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("sales_user"))):
