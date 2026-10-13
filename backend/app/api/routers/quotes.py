@@ -99,8 +99,8 @@ def preview_quote(payload: QuoteCreate, db: Session = Depends(get_db), current_u
         region = db.query(Region).filter(Region.id == payload.region_id).first()
         solution = db.query(Solution).filter(Solution.id == payload.solution_id).first()
         if not region or not solution: raise HTTPException(status_code=404, detail="Region or Solution not found.")
-        req_payload = RequirementPayload(**payload.requirement_data)
         bom = parse_and_evaluate_requirements(solution, payload.requirement_data)
+        req_payload = RequirementPayload(**payload.requirement_data)
         quote = Quote(solution_id=payload.solution_id, region_id=payload.region_id, client_name=payload.client_name, attention=payload.attention, description=payload.description, created_by_user_id=current_user.id, last_edited_by_user_id=current_user.id, quote_ref_no="PREVIEW")
         db.add(quote)
         db.flush()
@@ -126,8 +126,8 @@ def create_quote(payload: QuoteCreate, db: Session = Depends(get_db), current_us
         region = db.query(Region).filter(Region.id == payload.region_id).first()
         solution = db.query(Solution).filter(Solution.id == payload.solution_id).first()
         if not region or not solution: raise HTTPException(status_code=404, detail="Region or Solution not found.")
-        req_payload = RequirementPayload(**payload.requirement_data)
         bom = parse_and_evaluate_requirements(solution, payload.requirement_data)
+        req_payload = RequirementPayload(**payload.requirement_data)
         seq_val = db.execute(text("SELECT nextval('quote_ref_seq')")).scalar()
         quote_ref_no = f"BBS-{datetime.utcnow().year}-{seq_val:06d}"
         quote = Quote(solution_id=payload.solution_id, region_id=payload.region_id, client_name=payload.client_name, attention=payload.attention, description=payload.description, created_by_user_id=current_user.id, last_edited_by_user_id=current_user.id, quote_ref_no=quote_ref_no, version=0, status=QuoteStatus.DRAFT)
@@ -172,11 +172,11 @@ def update_quote(quote_id: int, payload: QuoteUpdate, db: Session = Depends(get_
         region = db.query(Region).filter(Region.id == payload.region_id).first()
         solution = db.query(Solution).filter(Solution.id == payload.solution_id).first()
         if not region or not solution: raise HTTPException(status_code=404, detail="Region or Solution not found.")
+        bom = parse_and_evaluate_requirements(solution, payload.requirement_data)
+        req_payload = RequirementPayload(**payload.requirement_data)
         quote.region = region; quote.solution = solution
         quote.client_name = payload.client_name; quote.attention = payload.attention; quote.description = payload.description
         quote.last_edited_by_user_id = current_user.id
-        req_payload = RequirementPayload(**payload.requirement_data)
-        bom = parse_and_evaluate_requirements(solution, payload.requirement_data)
         PricingEngine.calculate_and_save_quote(db, quote, req_payload, bom)
         db.commit()
         db.refresh(quote)
@@ -199,8 +199,8 @@ def recalculate_quote(quote_id: int, payload: QuoteRecalculate, db: Session = De
     if quote.status not in (QuoteStatus.DRAFT, QuoteStatus.CHANGES_REQUESTED): raise HTTPException(status_code=409, detail="Only DRAFT or CHANGES_REQUESTED quotes can be recalculated")
     if payload.expected_version != quote.version: raise HTTPException(status_code=409, detail="Version mismatch")
     try:
-        req_payload = RequirementPayload(**payload.requirement_data)
         bom = parse_and_evaluate_requirements(quote.solution, payload.requirement_data)
+        req_payload = RequirementPayload(**payload.requirement_data)
         PricingEngine.calculate_and_save_quote(db, quote, req_payload, bom)
         quote.last_edited_by_user_id = current_user.id
         db.commit()
@@ -215,6 +215,7 @@ def recalculate_quote(quote_id: int, payload: QuoteRecalculate, db: Session = De
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail="Error recalculating")
+
 
 @router.delete("/{quote_id}", response_model=dict)
 def delete_quote(quote_id: int, expected_version: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("sales_user"))):

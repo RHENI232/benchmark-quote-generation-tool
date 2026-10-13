@@ -54,5 +54,9 @@ export async function fetchClient(endpoint, { body, ...customConfig } = {}) {
     throw new Error(errorMsg);
   }
 
+  if (response.status === 204) {
+    return null;
+  }
+
   return response.json();
 }

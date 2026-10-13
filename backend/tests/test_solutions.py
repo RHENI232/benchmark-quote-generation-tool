@@ -269,3 +269,92 @@ def test_solution_margin_visibility_unmasked(client, test_users):
     assert resp_list_mgmt.status_code == 200
     item = next(s for s in resp_list_mgmt.json() if s["id"] == sol_id)
     assert float(item["default_margin_percent"]) == 22.0
+
+
+def test_solution_engine_status_and_quote_protection(client, test_users, db):
+    headers_admin = get_auth_headers(client, "admin@test.com", "pass")
+    headers_sales = get_auth_headers(client, "sales@test.com", "pass")
+
+    # 1. Verify WTVision Graphics is marked engine_status == "active"
+    sols = client.get("/api/solutions", headers=headers_sales).json()
+    wtv = next(s for s in sols if s["name"] == "WTVision Graphics")
+    assert wtv["engine_status"] == "active"
+
+    # 2. Create a new Solution -> must have engine_status == "pending"
+    resp_create = client.post(
+        "/api/solutions",
+        json={
+            "name": "OB Van Integration",
+            "code": "OB-VAN-01",
+            "default_margin_percent": 20.0,
+        },
+        headers=headers_admin,
+    )
+    assert resp_create.status_code == 201
+    pending_sol = resp_create.json()
+    assert pending_sol["engine_status"] == "pending"
+    assert pending_sol["code"] == "OB-VAN-01"
+
+    # 3. Duplicate code is rejected
+    resp_dup_code = client.post(
+        "/api/solutions",
+        json={
+            "name": "Another OB Van",
+            "code": "OB-VAN-01",
+            "default_margin_percent": 15.0,
+        },
+        headers=headers_admin,
+    )
+    assert resp_dup_code.status_code == 400
+
+    # 4. Admin can update solution metadata
+    resp_upd = client.put(
+        f"/api/solutions/{pending_sol['id']}",
+        json={
+            "name": "OB Van Turnkey Integration",
+            "code": "OB-VAN-02",
+            "default_margin_percent": 25.0,
+        },
+        headers=headers_admin,
+    )
+    assert resp_upd.status_code == 200
+    assert resp_upd.json()["name"] == "OB Van Turnkey Integration"
+    assert resp_upd.json()["code"] == "OB-VAN-02"
+    assert resp_upd.json()["engine_status"] == "pending"
+
+    # 5. Built-in WTVision Graphics cannot be renamed
+    resp_rename_wtv = client.put(
+        f"/api/solutions/{wtv['id']}",
+        json={"name": "Renamed WTV", "default_margin_percent": 15.0},
+        headers=headers_admin,
+    )
+    assert resp_rename_wtv.status_code == 400
+
+    # 6. Quote preview and quote creation are blocked (409 Conflict) for Engine Pending solutions
+    from backend.app.models.region import Region
+
+    region = db.query(Region).first()
+    if not region:
+        region = Region(country_name="Pending Test Region", currency_code="USD")
+        db.add(region)
+        db.commit()
+        db.refresh(region)
+
+    quote_payload = {
+        "solution_id": pending_sol["id"],
+        "region_id": region.id,
+        "client_name": "Broadcast Corp",
+        "requirement_data": {},
+    }
+
+    r_prev = client.post(
+        "/api/quotes/preview", json=quote_payload, headers=headers_sales
+    )
+    assert r_prev.status_code == 409
+    assert "Engine Pending" in r_prev.json()["detail"]
+
+    r_create_q = client.post(
+        "/api/quotes", json=quote_payload, headers=headers_sales
+    )
+    assert r_create_q.status_code == 409
+    assert "Engine Pending" in r_create_q.json()["detail"]

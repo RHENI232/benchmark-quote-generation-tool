@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Literal
 from decimal import Decimal
 
 class SolutionBase(BaseModel):
@@ -21,4 +21,5 @@ class SolutionMarginUpdate(BaseModel):
 class SolutionResponse(SolutionBase):
     id: int
     default_margin_percent: Optional[Decimal] = None
+    engine_status: Literal["active", "pending"] = "pending"
     model_config = ConfigDict(from_attributes=True)

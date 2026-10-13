@@ -34,15 +34,27 @@ def get_solution(solution_id: int, db: Session = Depends(get_db), current_user: 
 
 @router.post("/", response_model=SolutionResponse, status_code=status.HTTP_201_CREATED)
 def create_solution(solution_in: SolutionCreate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("solution_admin"))):
-    existing = db.execute(select(Solution).where(Solution.name == solution_in.name)).scalar_one_or_none()
+    clean_name = solution_in.name.strip()
+    if not clean_name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Solution name cannot be empty")
+    clean_code = solution_in.code.strip() if solution_in.code and solution_in.code.strip() else None
+
+    existing = db.execute(select(Solution).where(Solution.name == clean_name)).scalar_one_or_none()
     if existing:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Solution with this name already exists")
+    if clean_code:
+        existing_code = db.execute(select(Solution).where(Solution.code == clean_code)).scalar_one_or_none()
+        if existing_code:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Solution with this code already exists")
     
-    solution = Solution(**solution_in.model_dump())
+    dump_data = solution_in.model_dump()
+    dump_data["name"] = clean_name
+    dump_data["code"] = clean_code
+    solution = Solution(**dump_data)
     db.add(solution)
     db.commit()
     db.refresh(solution)
-    return solution
+    return mask_solution_financials(solution, current_user)
 
 @router.put("/{solution_id}", response_model=SolutionResponse)
 def update_solution(solution_id: int, solution_in: SolutionUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("solution_admin"))):
@@ -50,12 +62,32 @@ def update_solution(solution_id: int, solution_in: SolutionUpdate, db: Session =
     if not solution:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Solution not found")
         
-    for key, value in solution_in.model_dump().items():
+    clean_name = solution_in.name.strip()
+    if not clean_name:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Solution name cannot be empty")
+    clean_code = solution_in.code.strip() if solution_in.code and solution_in.code.strip() else None
+
+    if solution.name == "WTVision Graphics" and clean_name != "WTVision Graphics":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot rename the built-in WTVision Graphics solution")
+
+    existing = db.execute(select(Solution).where(Solution.name == clean_name, Solution.id != solution_id)).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Solution with this name already exists")
+    if clean_code:
+        existing_code = db.execute(select(Solution).where(Solution.code == clean_code, Solution.id != solution_id)).scalar_one_or_none()
+        if existing_code:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Solution with this code already exists")
+
+    dump_data = solution_in.model_dump()
+    dump_data["name"] = clean_name
+    dump_data["code"] = clean_code
+    for key, value in dump_data.items():
         setattr(solution, key, value)
     
     db.commit()
     db.refresh(solution)
-    return solution
+    return mask_solution_financials(solution, current_user)
+
 
 @router.patch("/{solution_id}/margin", response_model=SolutionResponse)
 def update_solution_margin(solution_id: int, margin_in: SolutionMarginUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("finance_tax_admin"))):

@@ -9,6 +9,7 @@ import QuoteListPage from './pages/QuoteListPage';
 import QuoteWizardPage from './pages/QuoteWizardPage';
 import QuoteDetailPage from './pages/QuoteDetailPage';
 import ApprovalQueuePage from './pages/ApprovalQueuePage';
+import CatalogPricingPage from './pages/CatalogPricingPage';
 import UserAdminPage from './pages/UserAdminPage';
 import './styles/global.css';
 import './styles/components.css';
@@ -26,6 +27,9 @@ function App() {
             <Route path="/quotes/new" element={<QuoteWizardPage />} />
             <Route path="/quotes/:id/edit" element={<QuoteWizardPage />} />
             <Route path="/quotes/:id" element={<QuoteDetailPage />} />
+          </Route>
+          <Route element={<ProtectedRoute requiredPermission="catalog_edit" />}>
+            <Route path="/catalog" element={<CatalogPricingPage />} />
           </Route>
           <Route element={<ProtectedRoute requiredPermission="finance_tax_admin" />}>
             <Route path="/approval-queue" element={<ApprovalQueuePage />} />

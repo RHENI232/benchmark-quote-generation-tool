@@ -42,6 +42,13 @@ export default function AppLayout({ children }) {
                   Quotes
                 </NavLink>
               </li>
+              {hasPermission(PERMISSIONS.CATALOG_EDIT) && (
+                <li>
+                  <NavLink to="/catalog" className={({ isActive }) => (isActive ? 'active' : '')}>
+                    Catalog &amp; Pricing
+                  </NavLink>
+                </li>
+              )}
               {hasPermission(PERMISSIONS.FINANCE_TAX_ADMIN) && (
                 <li>
                   <NavLink to="/approval-queue" className={({ isActive }) => (isActive ? 'active' : '')}>
@@ -57,6 +64,7 @@ export default function AppLayout({ children }) {
                 </li>
               )}
             </ul>
+
           </nav>
         </aside>
         <main className="app-content">

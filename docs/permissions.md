@@ -7,9 +7,10 @@ match.
 | Tier | Can do |
 |---|---|
 | **Sales** | Build and save quotes. See/download Customer Copy export only. No Cost Price/Margin visibility anywhere. No catalog editing. |
-| **Catalog Entry** | Everything Sales can, plus: edit catalog Sell/Cost Price, import catalog updates, set the Default Margin setting. Still no Cost Price/Margin visibility on quote preview or saved quotes, and no Internal/Tracking Sheet downloads. |
-| **Management** | Everything Catalog Entry can, plus: Cost Price/Margin visibility on quote preview and saved quotes, Internal + Tracking Sheet downloads, Region/Legal Entity/Currency/Tax configuration. |
-| **Admin** | Everything Management can, plus: define new Solutions (requirement schema + business rules), full user/role administration. |
+| **Catalog Entry** | Everything Sales can, plus: add/edit/delete Reference catalog products, edit catalog Sell Price, import/export catalog Excel files, and (when enabled by Admin via `catalog_entry_cost_visibility`, default `True`) view and edit product Cost Prices on the Catalog & Pricing screen only. Cannot edit Solution Default Margin. Still no Cost Price/Margin visibility on quote preview or saved quotes, and no Internal/Tracking Sheet downloads. |
+| **Management** | Everything Catalog Entry can, plus: permanent Cost Price/Margin visibility on Catalog, quote preview, and saved quotes; edit Solution Default Margin (`finance_tax_admin`); Internal + Tracking Sheet downloads; Region/Legal Entity/Currency/Tax configuration. |
+| **Admin** | Everything Management can, plus: create and edit Solutions (`solution_admin`), toggle Catalog Entry Cost-Price Visibility (`super_admin`), and full user/role administration. |
+
 
 ## Enforcement rules
 - Internal and Tracking Sheet downloads: restricted **server-side**

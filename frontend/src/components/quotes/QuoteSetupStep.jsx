@@ -54,11 +54,18 @@ export default function QuoteSetupStep({ draftQuote, updateDraft, onNext }) {
     onNext();
   };
 
+  const selectedSolutionObj = solutions.find(
+    (s) => String(s.id) === String(draftQuote.solution_id)
+  );
+  const isEngineSupported =
+    !selectedSolutionObj || selectedSolutionObj.engine_status !== 'pending';
+
   // Validation
   const isValid =
     draftQuote.client_name.trim().length > 0 &&
     draftQuote.region_id !== '' &&
-    draftQuote.solution_id !== '';
+    draftQuote.solution_id !== '' &&
+    isEngineSupported;
 
   if (isLoading) {
     return (
@@ -162,12 +169,25 @@ export default function QuoteSetupStep({ draftQuote, updateDraft, onNext }) {
                   required
                 >
                   <option value="">-- Select a Solution --</option>
-                  {solutions.map((solution) => (
-                    <option key={solution.id} value={solution.id}>
-                      {solution.name}
-                    </option>
-                  ))}
+                  {solutions.map((solution) => {
+                    const isPending = solution.engine_status === 'pending';
+                    return (
+                      <option
+                        key={solution.id}
+                        value={solution.id}
+                        disabled={isPending}
+                      >
+                        {solution.name}
+                        {isPending ? ' (Engine Pending — Unavailable)' : ''}
+                      </option>
+                    );
+                  })}
                 </select>
+                {!isEngineSupported && (
+                  <p className="text-danger" style={{ marginTop: '0.35rem', fontSize: '0.8rem' }}>
+                    This solution is marked Engine Pending and cannot generate quotations yet.
+                  </p>
+                )}
               </div>
 
               <div className="form-group">

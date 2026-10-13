@@ -5,6 +5,7 @@ from backend.app.models.solution import Solution
 from backend.app.models.catalog import CatalogItem, CatalogItemKind
 from backend.app.models.quote import Quote, QuoteLineItem, QuoteStatus
 from backend.app.models.invite import InviteToken, TokenType
+from backend.app.models.setting import AppSetting
 
 __all__ = [
     "Base",
@@ -20,4 +21,5 @@ __all__ = [
     "QuoteStatus",
     "InviteToken",
     "TokenType",
+    "AppSetting",
 ]

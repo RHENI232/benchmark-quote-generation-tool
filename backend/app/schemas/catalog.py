@@ -34,3 +34,9 @@ class CatalogItemResponse(CatalogItemBase):
 
 class CatalogImportResetConfirm(BaseModel):
     confirm_reset: bool
+
+class CatalogSettingsResponse(BaseModel):
+    catalog_entry_cost_visibility: bool
+
+class CatalogSettingsUpdate(BaseModel):
+    catalog_entry_cost_visibility: bool

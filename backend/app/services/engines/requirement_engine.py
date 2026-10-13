@@ -15,6 +15,11 @@ def parse_and_evaluate_requirements(solution: Solution, raw_data: Dict[str, Any]
     Then dispatches the payload to the appropriate business rule engine
     based on the Solution.
     """
+    if not solution.is_engine_supported:
+        raise RequirementEngineError(
+            f"Solution '{solution.name}' is currently Engine Pending. No business rules engine is implemented for this solution."
+        )
+
     try:
         payload = RequirementPayload(**raw_data)
     except ValidationError as e:

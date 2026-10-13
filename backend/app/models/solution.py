@@ -2,6 +2,8 @@ from sqlalchemy import Column, Integer, String, Numeric, JSON
 from sqlalchemy.orm import relationship
 from backend.app.core.database import Base
 
+SUPPORTED_QUOTE_ENGINES = {"WTVision Graphics"}
+
 class Solution(Base):
     __tablename__ = "solutions"
 
@@ -20,3 +22,11 @@ class Solution(Base):
     # Relationships
     catalog_items = relationship("CatalogItem", back_populates="solution")
     quotes = relationship("Quote", back_populates="solution")
+
+    @property
+    def is_engine_supported(self) -> bool:
+        return self.name in SUPPORTED_QUOTE_ENGINES
+
+    @property
+    def engine_status(self) -> str:
+        return "active" if self.is_engine_supported else "pending"
