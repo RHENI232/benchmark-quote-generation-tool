@@ -21,6 +21,8 @@ from backend.app.schemas.requirement import RequirementPayload
 from backend.app.services.engines.requirement_engine import parse_and_evaluate_requirements, RequirementEngineError
 from backend.app.services.engines.pricing_engine import PricingEngine, PricingEngineError
 from backend.app.services.export_service import generate_customer_copy, generate_internal_copy, generate_tracking_sheet
+from backend.app.services.pdf_service import generate_customer_pdf
+
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +71,7 @@ def list_quotes(
     return quotes
 
 XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+PDF_MEDIA_TYPE = "application/pdf"
 
 @router.get("/{quote_id}/export/customer")
 def export_customer_copy(quote_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("sales_user"))):
@@ -78,6 +81,22 @@ def export_customer_copy(quote_id: int, db: Session = Depends(get_db), current_u
     if quote.status != QuoteStatus.APPROVED: raise HTTPException(status_code=409, detail="Quote must be APPROVED before generating a customer copy.")
     buf = generate_customer_copy(quote)
     return StreamingResponse(buf, media_type=XLSX_MEDIA_TYPE, headers={"Content-Disposition": f'attachment; filename="{quote.quote_ref_no}_Customer_Copy.xlsx"'})
+
+@router.get("/{quote_id}/export/customer-pdf")
+def export_customer_pdf(quote_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("sales_user"))):
+    quote = db.query(Quote).filter(Quote.id == quote_id).first()
+    if not quote or quote.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Quote not found")
+    if current_user.role_tier == RoleTier.SALES and quote.created_by_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if quote.status != QuoteStatus.APPROVED:
+        raise HTTPException(status_code=409, detail="Quote must be APPROVED before generating a customer PDF.")
+    buf = generate_customer_pdf(quote)
+    return StreamingResponse(
+        buf,
+        media_type=PDF_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{quote.quote_ref_no}_Customer_Quote.pdf"'}
+    )
 
 @router.get("/{quote_id}/export/internal")
 def export_internal_copy(quote_id: int, db: Session = Depends(get_db), current_user: User = Depends(require_permission("cost_visibility"))):

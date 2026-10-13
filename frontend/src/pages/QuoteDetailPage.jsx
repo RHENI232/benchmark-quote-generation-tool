@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getQuote, getQuoteHistory, submitQuote, approveQuote, requestChangesQuote, overrideApproveQuote, setQuoteUrgency } from '../api/quoteApi';
+import { getQuote, getQuoteHistory, submitQuote, approveQuote, requestChangesQuote, overrideApproveQuote, setQuoteUrgency, downloadCustomerPdf } from '../api/quoteApi';
 import { regionApi } from '../api/regionApi';
 import { solutionApi } from '../api/solutionApi';
 import { useAuth, PERMISSIONS } from '../auth/AuthContext';
@@ -23,6 +23,8 @@ export default function QuoteDetailPage() {
   const [workflowAction, setWorkflowAction] = useState(null); // 'request_changes' | 'override_approve'
   const [workflowComment, setWorkflowComment] = useState('');
   const [conflictError, setConflictError] = useState('');
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [pdfError, setPdfError] = useState('');
 
   useEffect(() => {
     let isMounted = true;
@@ -93,6 +95,23 @@ export default function QuoteDetailPage() {
       }
     } finally {
       setIsSubmittingWorkflow(false);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    setPdfError('');
+    setIsDownloadingPdf(true);
+    try {
+      await downloadCustomerPdf(quote.id, quote.quote_ref_no);
+    } catch (err) {
+      console.error('Failed to download customer PDF:', err);
+      if (err.status === 409) {
+        setPdfError('Quote must be APPROVED before downloading the customer PDF. Please refresh to check the latest status.');
+      } else {
+        setPdfError(err.message || 'Failed to download customer PDF.');
+      }
+    } finally {
+      setIsDownloadingPdf(false);
     }
   };
 
@@ -442,6 +461,14 @@ export default function QuoteDetailPage() {
           )}
         </div>
       )}
+      {pdfError && (
+        <div className="alert alert-danger mt-3 mb-3" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{pdfError}</span>
+          <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => setPdfError('')}>
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* BUTTON AREA */}
       <div className="preview-actions">
@@ -450,12 +477,26 @@ export default function QuoteDetailPage() {
             type="button"
             className="btn btn-secondary btn-lg"
             onClick={() => navigate('/quotes')}
-            disabled={isSubmittingWorkflow}
+            disabled={isSubmittingWorkflow || isDownloadingPdf}
           >
             &larr; Back to Quotes
           </button>
         </div>
-        <div className="action-right" style={{ display: 'flex', gap: '0.5rem' }}>
+        <div className="action-right" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          {/* Customer PDF Export Button */}
+          <button
+            type="button"
+            className={`btn ${currentStatus === 'approved' ? 'btn-primary' : 'btn-outline-secondary'} btn-lg`}
+            onClick={handleDownloadPdf}
+            disabled={currentStatus !== 'approved' || isDownloadingPdf}
+            title={
+              currentStatus === 'approved'
+                ? 'Download customer-facing PDF quotation'
+                : 'Customer PDF generation requires quote approval'
+            }
+          >
+            {isDownloadingPdf ? 'Generating PDF...' : 'Download Customer PDF'}
+          </button>
           {(currentStatus === 'pending_approval' || currentStatus === 'changes_requested') && hasPermission(PERMISSIONS.FINANCE_TAX_ADMIN) && (
             quote.is_urgent ? (
               <button

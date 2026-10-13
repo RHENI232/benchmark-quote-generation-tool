@@ -1624,3 +1624,249 @@ def test_phase11_concurrent_urgency_requests_idempotent(engine):
             cleanup_db.commit()
         finally:
             cleanup_db.close()
+
+
+# ===========================================================================
+# Phase 2 / CP11: Customer PDF Generation Tests
+# ===========================================================================
+
+def test_cp11_customer_pdf_status_validation(client, admin_user, base_payload):
+    """Customer PDF export must require APPROVED status and return 409 otherwise."""
+    headers = get_auth_headers(admin_user.id)
+
+    # 1. DRAFT -> 409
+    resp_create = client.post("/api/quotes", json=base_payload, headers=headers)
+    assert resp_create.status_code == 201
+    q = resp_create.json()
+    version = q["version"]
+
+    resp = client.get(f"/api/quotes/{q['id']}/export/customer-pdf", headers=headers)
+    assert resp.status_code == 409
+    assert "Quote must be APPROVED before generating a customer PDF." in resp.json()["detail"]
+
+    # 2. PENDING_APPROVAL -> 409
+    resp = client.post(f"/api/quotes/{q['id']}/submit", json={"expected_version": version, "comment": "submitting"}, headers=headers)
+    assert resp.status_code == 200, resp.text
+    version = resp.json()["version"]
+
+    resp = client.get(f"/api/quotes/{q['id']}/export/customer-pdf", headers=headers)
+    assert resp.status_code == 409
+
+    # 3. CHANGES_REQUESTED -> 409
+    resp = client.post(f"/api/quotes/{q['id']}/request-changes", json={"expected_version": version, "comment": "changes needed"}, headers=headers)
+    assert resp.status_code == 200, resp.text
+    version = resp.json()["version"]
+
+    resp = client.get(f"/api/quotes/{q['id']}/export/customer-pdf", headers=headers)
+    assert resp.status_code == 409
+
+    # 4. APPROVED -> 200 with valid PDF binary
+    resp = client.post(f"/api/quotes/{q['id']}/override-approve", json={"expected_version": version, "comment": "approved"}, headers=headers)
+    assert resp.status_code == 200, resp.text
+
+    resp = client.get(f"/api/quotes/{q['id']}/export/customer-pdf", headers=headers)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.content.startswith(b"%PDF-")
+    assert f'filename="{q["quote_ref_no"]}_Customer_Quote.pdf"' in resp.headers.get("content-disposition", "")
+
+
+def test_cp11_customer_pdf_confidentiality_and_redaction(client, admin_user, base_payload, db):
+    """PDF must strictly omit internal cost prices, margins, approval logs, and internal notes."""
+    from io import BytesIO
+    from pypdf import PdfReader
+
+    headers = get_auth_headers(admin_user.id)
+    payload = {
+        **base_payload,
+        "client_name": "Acme Broadcast Network",
+        "attention": "Jane Doe",
+        "description": "Studio Automation System",
+    }
+    resp_create = client.post("/api/quotes", json=payload, headers=headers)
+    assert resp_create.status_code == 201
+    q = resp_create.json()
+    quote_id = q["id"]
+    version = q["version"]
+
+    # Submit and approve with sensitive comments
+    resp = client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": version, "comment": "Internal sales submission note"}, headers=headers)
+    version = resp.json()["version"]
+    secret_approval_comment = "Secret reviewer financial note: margin is approved at 25%"
+    resp = client.post(f"/api/quotes/{quote_id}/approve", json={"expected_version": version, "comment": secret_approval_comment}, headers=headers)
+    assert resp.status_code == 200
+
+    # Fetch DB quote to check exact internal cost figures
+    db_quote = db.query(Quote).filter(Quote.id == quote_id).first()
+    assert db_quote.subtotal_cost_usd is not None
+
+    resp = client.get(f"/api/quotes/{quote_id}/export/customer-pdf", headers=headers)
+    assert resp.status_code == 200
+
+    reader = PdfReader(BytesIO(resp.content))
+    assert len(reader.pages) >= 1
+    pdf_text = " ".join(page.extract_text() for page in reader.pages)
+
+    # 1. Customer-facing fields MUST be present
+    assert "Acme Broadcast Network" in pdf_text
+    assert q["quote_ref_no"] in pdf_text
+    assert "Studio Automation System" in pdf_text
+    assert "Grand Total" in pdf_text or "TOTAL" in pdf_text
+    assert "Quotation" in pdf_text or "QUOTATION" in pdf_text
+
+    # 2. Internal confidential fields MUST NOT be present
+    # No internal cost labels or figures
+    assert "Cost Price" not in pdf_text
+    assert "Unit Cost" not in pdf_text
+    assert "Subtotal Cost" not in pdf_text
+    assert "line_cost" not in pdf_text
+    assert "Internal Copy" not in pdf_text
+    assert "Tracking Sheet" not in pdf_text
+    assert secret_approval_comment not in pdf_text
+    assert "Internal sales submission note" not in pdf_text
+
+    # No margin percentages or labels
+    assert "Margin" not in pdf_text
+    assert "margin" not in pdf_text
+
+    # Verify line items: selling prices should appear, but cost price snapshots should NOT
+    for item in db_quote.line_items:
+        cost_val_str = f"{float(item.unit_cost_price_snapshot):.2f}"
+        sell_val_str = f"{float(item.unit_sell_price_snapshot):.2f}"
+        if cost_val_str != sell_val_str and float(item.unit_cost_price_snapshot) > 0:
+            assert f"${cost_val_str}" not in pdf_text
+
+
+def test_cp11_customer_pdf_rbac_and_idor(client, sales_user, sales_user_2, management_user, admin_user, catalog_entry_user, base_payload):
+    """RBAC and IDOR enforcement: Sales can only export own approved quotes; catalog entry forbidden."""
+    sales_headers = get_auth_headers(sales_user.id)
+    sales2_headers = get_auth_headers(sales_user_2.id)
+    mgmt_headers = get_auth_headers(management_user.id)
+    admin_headers = get_auth_headers(admin_user.id)
+    cat_headers = get_auth_headers(catalog_entry_user.id)
+
+    # Sales creates quote
+    resp = client.post("/api/quotes", json=base_payload, headers=sales_headers)
+    assert resp.status_code == 201
+    q = resp.json()
+    quote_id = q["id"]
+    version = q["version"]
+
+    # Submit and approve
+    resp = client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": version}, headers=sales_headers)
+    version = resp.json()["version"]
+    resp = client.post(f"/api/quotes/{quote_id}/approve", json={"expected_version": version}, headers=mgmt_headers)
+    assert resp.status_code == 200
+
+    # 1. Sales owner CAN download
+    resp_owner = client.get(f"/api/quotes/{quote_id}/export/customer-pdf", headers=sales_headers)
+    assert resp_owner.status_code == 200
+    assert resp_owner.content.startswith(b"%PDF-")
+
+    # 2. Sales non-owner CANNOT download (403 Forbidden)
+    resp_other = client.get(f"/api/quotes/{quote_id}/export/customer-pdf", headers=sales2_headers)
+    assert resp_other.status_code == 403
+
+    # 3. Unauthenticated request CANNOT download (403 Forbidden)
+    resp_unauth = client.get(f"/api/quotes/{quote_id}/export/customer-pdf")
+    assert resp_unauth.status_code == 403
+
+    # 4. Management CAN download
+    resp_mgmt = client.get(f"/api/quotes/{quote_id}/export/customer-pdf", headers=mgmt_headers)
+    assert resp_mgmt.status_code == 200
+
+    # 5. Admin CAN download
+    resp_admin = client.get(f"/api/quotes/{quote_id}/export/customer-pdf", headers=admin_headers)
+    assert resp_admin.status_code == 200
+
+    # 6. Nonexistent quote -> 404
+    resp_nonexistent = client.get("/api/quotes/999999/export/customer-pdf", headers=admin_headers)
+    assert resp_nonexistent.status_code == 404
+
+    # 7. Soft-deleted quote -> 404
+    version = resp.json()["version"]
+    del_resp = client.delete(f"/api/quotes/{quote_id}?expected_version={version}", headers=admin_headers)
+    assert del_resp.status_code == 200
+    resp_deleted = client.get(f"/api/quotes/{quote_id}/export/customer-pdf", headers=admin_headers)
+    assert resp_deleted.status_code == 404
+
+
+def test_cp11_customer_pdf_currency_and_tax(client, admin_user, base_payload, db):
+    """Customer PDF must format non-USD currency and display tax breakdown when tax is enabled."""
+    from io import BytesIO
+    from pypdf import PdfReader
+
+    region = db.query(Region).filter(Region.currency_code == "SGD").first()
+    if not region:
+        region = db.query(Region).first()
+
+    headers = get_auth_headers(admin_user.id)
+    payload = {
+        **base_payload,
+        "region_id": region.id,
+        "client_name": "Singapore Broadcast Corp",
+    }
+    resp = client.post("/api/quotes", json=payload, headers=headers)
+    assert resp.status_code == 201
+    q = resp.json()
+    quote_id = q["id"]
+    version = q["version"]
+
+    # Submit and approve
+    resp = client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": version}, headers=headers)
+    version = resp.json()["version"]
+    resp = client.post(f"/api/quotes/{quote_id}/approve", json={"expected_version": version}, headers=headers)
+    assert resp.status_code == 200
+
+    resp_pdf = client.get(f"/api/quotes/{quote_id}/export/customer-pdf", headers=headers)
+    assert resp_pdf.status_code == 200
+
+    reader = PdfReader(BytesIO(resp_pdf.content))
+    pdf_text = " ".join(page.extract_text() for page in reader.pages)
+
+    assert "Singapore Broadcast Corp" in pdf_text
+    assert q["quote_ref_no"] in pdf_text
+    assert region.currency_code in pdf_text
+    if q.get("tax_enabled") and float(q.get("tax_amount", 0)) > 0:
+        assert "Tax" in pdf_text
+
+
+def test_cp11_customer_pdf_inr_currency_formatting(client, admin_user, base_payload, db):
+    """Customer PDF must format INR currency cleanly as 'INR ' with zero missing-glyph black squares (U+20B9)."""
+    from io import BytesIO
+    from pypdf import PdfReader
+
+    region = db.query(Region).filter(Region.currency_code == "INR").first()
+    if not region:
+        region = db.query(Region).first()
+
+    headers = get_auth_headers(admin_user.id)
+    payload = {
+        **base_payload,
+        "region_id": region.id,
+        "client_name": "Doordarshan India",
+    }
+    resp = client.post("/api/quotes", json=payload, headers=headers)
+    assert resp.status_code == 201
+    q = resp.json()
+    quote_id = q["id"]
+    version = q["version"]
+
+    # Submit and approve
+    resp = client.post(f"/api/quotes/{quote_id}/submit", json={"expected_version": version}, headers=headers)
+    version = resp.json()["version"]
+    resp = client.post(f"/api/quotes/{quote_id}/approve", json={"expected_version": version}, headers=headers)
+    assert resp.status_code == 200
+
+    resp_pdf = client.get(f"/api/quotes/{quote_id}/export/customer-pdf", headers=headers)
+    assert resp_pdf.status_code == 200
+
+    reader = PdfReader(BytesIO(resp_pdf.content))
+    pdf_text = " ".join(page.extract_text() for page in reader.pages)
+
+    assert "Doordarshan India" in pdf_text
+    assert q["quote_ref_no"] in pdf_text
+    # Must use ASCII currency code, NOT the unprintable unicode rupee sign
+    assert "\u20b9" not in pdf_text
+    if region.currency_code == "INR":
+        assert "INR" in pdf_text
