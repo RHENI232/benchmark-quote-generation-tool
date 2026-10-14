@@ -86,3 +86,34 @@ def test_invite_accept(client, db):
     # Check login
     resp2 = client.post("/api/auth/login", json={"email": "invited@test.com", "password": "newpass"})
     assert resp2.status_code == 200
+
+
+def test_cors_preflight_login_allowed_origins(client):
+    """CORS preflight OPTIONS requests from allowed origins return 200 OK with correct headers."""
+    allowed_origins = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://192.168.229.41:5173",
+    ]
+    for origin in allowed_origins:
+        headers = {
+            "Origin": origin,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "content-type,authorization,cache-control,pragma",
+        }
+        resp = client.options("/api/auth/login", headers=headers)
+        assert resp.status_code == 200
+        assert resp.headers.get("access-control-allow-origin") == origin
+        assert resp.headers.get("access-control-allow-credentials") == "true"
+        assert "POST" in resp.headers.get("access-control-allow-methods", "")
+
+
+def test_cors_preflight_login_disallowed_origin(client):
+    """CORS preflight OPTIONS request from untrusted origin does not receive allow-origin."""
+    headers = {
+        "Origin": "http://untrusted-domain.com",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "content-type",
+    }
+    resp = client.options("/api/auth/login", headers=headers)
+    assert resp.headers.get("access-control-allow-origin") != "http://untrusted-domain.com"

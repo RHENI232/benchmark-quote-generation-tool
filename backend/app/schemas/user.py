@@ -10,8 +10,11 @@ class UserBase(BaseModel):
 class UserResponse(UserBase):
     id: int
     account_type: AccountType
+    is_pending_invite: Optional[bool] = False
+    status: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
 
 class InviteUserRequest(BaseModel):
     email: str

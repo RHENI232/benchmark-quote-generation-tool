@@ -22,3 +22,13 @@ class User(Base):
     password_hash = Column(String, nullable=True) # Nullable for entra_synced
     enabled = Column(Boolean, default=True, nullable=False)
     entra_object_id = Column(String, nullable=True)
+
+    @property
+    def is_pending_invite(self) -> bool:
+        return self.password_hash is None and not self.enabled and self.account_type == AccountType.MANUAL
+
+    @property
+    def status(self) -> str:
+        if self.is_pending_invite:
+            return "Pending Invite"
+        return "Active" if self.enabled else "Disabled"

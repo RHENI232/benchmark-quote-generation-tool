@@ -3,6 +3,7 @@ import PageHeader from '../components/common/PageHeader';
 import {
   getUsers,
   inviteUser,
+  resendInvite,
   updateUserRole,
   updateUserStatus,
   deleteUser
@@ -19,7 +20,9 @@ export default function UserAdminPage() {
   const [inviteRole, setInviteRole] = useState(ROLES.SALES);
   const [isInviting, setIsInviting] = useState(false);
   const [inviteToken, setInviteToken] = useState(null);
+  const [inviteSuccessMsg, setInviteSuccessMsg] = useState(null);
   const [inviteError, setInviteError] = useState(null);
+  const [isResendingId, setIsResendingId] = useState(null);
 
   const [actionError, setActionError] = useState(null);
 
@@ -37,6 +40,14 @@ export default function UserAdminPage() {
 
   useEffect(() => {
     fetchUsers();
+
+    const handleFocus = () => {
+      fetchUsers();
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
 
   const handleInvite = async (e) => {
@@ -44,18 +55,40 @@ export default function UserAdminPage() {
     setIsInviting(true);
     setInviteError(null);
     setInviteToken(null);
+    setInviteSuccessMsg(null);
     try {
       const response = await inviteUser(inviteEmail, inviteRole);
+      const targetEmail = inviteEmail;
       setInviteEmail('');
       setInviteRole(ROLES.SALES);
       if (response.token) {
         setInviteToken(response.token);
       }
+      setInviteSuccessMsg(`Invitation dispatched to ${targetEmail}.`);
       await fetchUsers();
     } catch (err) {
-      setInviteError(err.message);
+      setInviteError(err.message || 'Failed to send invitation.');
     } finally {
       setIsInviting(false);
+    }
+  };
+
+  const handleResendInvite = async (userId, targetEmail) => {
+    setIsResendingId(userId);
+    setActionError(null);
+    setInviteToken(null);
+    setInviteSuccessMsg(null);
+    try {
+      const response = await resendInvite(userId);
+      if (response.token) {
+        setInviteToken(response.token);
+      }
+      setInviteSuccessMsg(`Invitation resent to ${targetEmail}.`);
+      await fetchUsers();
+    } catch (err) {
+      setActionError(err.message || 'Failed to resend invitation.');
+    } finally {
+      setIsResendingId(null);
     }
   };
 
@@ -98,7 +131,20 @@ export default function UserAdminPage() {
 
   return (
     <div className="page-container">
-      <PageHeader title="User Administration" />
+      <PageHeader
+        title="User Administration"
+        actions={
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={fetchUsers}
+            disabled={isLoading}
+          >
+            Refresh
+          </button>
+        }
+      />
+
 
       {error && (
         <div className="alert alert-danger" style={{ marginBottom: '1rem' }}>
@@ -121,10 +167,16 @@ export default function UserAdminPage() {
           </div>
         )}
 
+        {inviteSuccessMsg && (
+          <div className="alert alert-success" style={{ marginBottom: '1rem' }}>
+            {inviteSuccessMsg}
+          </div>
+        )}
+
         {inviteToken && (
-          <div className="alert alert-success" style={{ marginBottom: '1rem', backgroundColor: '#dcfce3', color: '#166534', border: '1px solid #bbf7d0', padding: '1rem', borderRadius: '0.375rem' }}>
-            <strong>Invitation created successfully!</strong>
-            <p style={{ margin: '0.5rem 0 0 0' }}>Development Token (Do not share): <code style={{ backgroundColor: 'rgba(255,255,255,0.7)', padding: '0.2rem 0.4rem', borderRadius: '0.25rem' }}>{inviteToken}</code></p>
+          <div className="alert alert-info" style={{ marginBottom: '1rem', backgroundColor: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', padding: '1rem', borderRadius: '0.375rem' }}>
+            <strong>Local Development Token (Do not share):</strong>
+            <p style={{ margin: '0.5rem 0 0 0' }}><code style={{ backgroundColor: 'rgba(255,255,255,0.7)', padding: '0.2rem 0.4rem', borderRadius: '0.25rem' }}>{inviteToken}</code></p>
           </div>
         )}
 
@@ -165,7 +217,7 @@ export default function UserAdminPage() {
             className="btn btn-primary" 
             disabled={isInviting || !inviteEmail}
           >
-            {isInviting ? 'Inviting...' : 'Invite User'}
+            {isInviting ? 'Sending Invite...' : 'Invite User'}
           </button>
         </form>
       </div>
@@ -206,15 +258,33 @@ export default function UserAdminPage() {
                       </select>
                     </td>
                     <td>
-                      <span className={`badge ${u.enabled ? 'badge-success' : 'badge-neutral'}`}>
-                        {u.enabled ? 'Enabled' : 'Disabled'}
-                      </span>
+                      {u.is_pending_invite || u.status === 'Pending Invite' ? (
+                        <span className="badge" style={{ backgroundColor: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}>
+                          Pending Invite
+                        </span>
+                      ) : (
+                        <span className={`badge ${u.enabled ? 'badge-success' : 'badge-neutral'}`}>
+                          {u.status || (u.enabled ? 'Active' : 'Disabled')}
+                        </span>
+                      )}
                     </td>
                     <td>{u.account_type}</td>
                     <td>
-                      <div style={{ display: 'flex', gap: '0.5rem' }}>
-                        {u.enabled ? (
+                      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        {(u.is_pending_invite || u.status === 'Pending Invite') ? (
                           <button
+                            type="button"
+                            className="btn btn-outline-primary"
+                            onClick={() => handleResendInvite(u.id, u.email)}
+                            disabled={isResendingId === u.id}
+                            title="Resend invitation email with a fresh link"
+                          >
+                            {isResendingId === u.id ? 'Resending...' : 'Resend Invite'}
+                          </button>
+
+                        ) : u.enabled ? (
+                          <button
+                            type="button"
                             className="btn btn-secondary"
                             onClick={() => handleStatusChange(u.id, false)}
                             disabled={isCurrentUser}
@@ -224,6 +294,7 @@ export default function UserAdminPage() {
                           </button>
                         ) : (
                           <button
+                            type="button"
                             className="btn btn-primary"
                             onClick={() => handleStatusChange(u.id, true)}
                           >
@@ -231,6 +302,7 @@ export default function UserAdminPage() {
                           </button>
                         )}
                         <button
+                          type="button"
                           className="btn btn-danger"
                           onClick={() => handleDelete(u.id)}
                           disabled={isCurrentUser}
@@ -250,4 +322,3 @@ export default function UserAdminPage() {
     </div>
   );
 }
-

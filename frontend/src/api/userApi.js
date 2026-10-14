@@ -33,3 +33,9 @@ export async function deleteUser(userId) {
     method: 'DELETE'
   });
 }
+
+export async function resendInvite(userId) {
+  return fetchClient(`/api/users/${userId}/resend-invite`, {
+    method: 'POST'
+  });
+}

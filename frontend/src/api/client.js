@@ -6,9 +6,16 @@ export async function fetchClient(endpoint, { body, ...customConfig } = {}) {
     'Content-Type': 'application/json',
   };
 
+  // Only apply cache-busting to GET requests to prevent unnecessary preflight overhead
+  if (!body && customConfig.method !== 'POST') {
+    headers['Cache-Control'] = 'no-cache';
+    headers['Pragma'] = 'no-cache';
+  }
+
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
+
 
   const config = {
     method: body ? 'POST' : 'GET',
