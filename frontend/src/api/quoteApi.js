@@ -115,3 +115,10 @@ export async function downloadCustomerPdf(quoteId, quoteRefNo) {
   a.remove();
   window.URL.revokeObjectURL(url);
 }
+
+export async function refreshQuoteFxRate(quoteId, payload) {
+  return fetchClient(`/api/quotes/${quoteId}/refresh-fx`, {
+    method: 'POST',
+    body: payload,
+  });
+}

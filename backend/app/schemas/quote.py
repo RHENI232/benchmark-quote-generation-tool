@@ -48,6 +48,10 @@ class QuoteUrgentAction(BaseModel):
 class QuoteDeleteAction(BaseModel):
     expected_version: int
 
+class QuoteRefreshFXAction(BaseModel):
+    expected_version: int
+    comment: Optional[str] = None
+
 class QuoteLineItemResponse(BaseModel):
     id: int
     quote_id: int

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getQuote, getQuoteHistory, submitQuote, approveQuote, requestChangesQuote, overrideApproveQuote, setQuoteUrgency, downloadCustomerPdf } from '../api/quoteApi';
+import { getQuote, getQuoteHistory, submitQuote, approveQuote, requestChangesQuote, overrideApproveQuote, setQuoteUrgency, downloadCustomerPdf, refreshQuoteFxRate } from '../api/quoteApi';
 import { regionApi } from '../api/regionApi';
 import { solutionApi } from '../api/solutionApi';
 import { useAuth, PERMISSIONS } from '../auth/AuthContext';
@@ -25,6 +25,12 @@ export default function QuoteDetailPage() {
   const [conflictError, setConflictError] = useState('');
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [pdfError, setPdfError] = useState('');
+
+  // FX refresh state
+  const [fxRefreshModalOpen, setFxRefreshModalOpen] = useState(false);
+  const [fxRefreshComment, setFxRefreshComment] = useState('');
+  const [isRefreshingFx, setIsRefreshingFx] = useState(false);
+  const [fxRefreshSuccessMessage, setFxRefreshSuccessMessage] = useState('');
 
   useEffect(() => {
     let isMounted = true;
@@ -112,6 +118,39 @@ export default function QuoteDetailPage() {
       }
     } finally {
       setIsDownloadingPdf(false);
+    }
+  };
+
+  const handleConfirmRefreshFx = async () => {
+    setConflictError('');
+    setFxRefreshSuccessMessage('');
+    setIsRefreshingFx(true);
+    try {
+      const payload = {
+        expected_version: quote.version,
+        comment: fxRefreshComment.trim() || undefined,
+      };
+      const updatedQuote = await refreshQuoteFxRate(id, payload);
+      setQuote(updatedQuote);
+      setFxRefreshModalOpen(false);
+      setFxRefreshComment('');
+      setFxRefreshSuccessMessage(
+        `Successfully refreshed FX rate to ${Number(updatedQuote.fx_rate_to_usd).toFixed(6)} (${updatedQuote.currency_code}). Updated Total Sell: ${formatMoney(updatedQuote.total_sell_local)} ${updatedQuote.currency_code}.`
+      );
+      const historyData = await getQuoteHistory(id).catch(() => null);
+      if (historyData) {
+        setApprovalLogs(historyData);
+      }
+    } catch (err) {
+      if (err.message && err.message.toLowerCase().includes('version mismatch')) {
+        setConflictError('Concurrency conflict: The quote was modified by another user. Please refresh the page.');
+      } else if (err.message && err.message.toLowerCase().includes('immutable')) {
+        setConflictError('Status conflict: Cannot refresh FX rate on a quote in this status.');
+      } else {
+        setConflictError(err.message || 'Failed to refresh FX rate.');
+      }
+    } finally {
+      setIsRefreshingFx(false);
     }
   };
 
@@ -203,6 +242,18 @@ export default function QuoteDetailPage() {
     .reverse()
     .find(l => l.action === 'REQUEST_CHANGES' || l.to_status === 'changes_requested');
 
+  const activeRegion = regions.find((r) => r.id === quote?.region_id);
+  const isEligibleForFxRefresh = currentStatus === 'draft' || currentStatus === 'changes_requested';
+  const canRefreshFx = isEligibleForFxRefresh && hasPermission(PERMISSIONS.FINANCE_TAX_ADMIN);
+
+  const quoteRate = quote?.fx_rate_to_usd ? Number(quote.fx_rate_to_usd) : null;
+  const regionRate = activeRegion?.fx_rate_to_usd ? Number(activeRegion.fx_rate_to_usd) : null;
+  const isFxRateDiffering =
+    isEligibleForFxRefresh &&
+    quoteRate !== null &&
+    regionRate !== null &&
+    Math.abs(quoteRate - regionRate) > 0.0000001;
+
   return (
     <div className="preview-step-container">
       {/* PROFESSIONAL HEADER */}
@@ -231,6 +282,78 @@ export default function QuoteDetailPage() {
           <div className="meta-value">{quote.date ? new Date(quote.date).toLocaleDateString() : (quote.created_at ? new Date(quote.created_at).toLocaleDateString() : new Date().toLocaleDateString())}</div>
         </div>
       </div>
+
+      {/* FX REFRESH SUCCESS MESSAGE */}
+      {fxRefreshSuccessMessage && (
+        <div
+          className="alert alert-success"
+          style={{
+            marginTop: '1rem',
+            marginBottom: '1rem',
+            padding: '0.875rem 1rem',
+            backgroundColor: '#dcfce3',
+            color: '#166534',
+            border: '1px solid #bbf7d0',
+            borderRadius: '0.375rem',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <span>{fxRefreshSuccessMessage}</span>
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-secondary"
+            onClick={() => setFxRefreshSuccessMessage('')}
+            style={{ padding: '0.2rem 0.5rem', fontSize: '0.75rem' }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* FX RATE DIFFERENCE NOTICE */}
+      {isFxRateDiffering && (
+        <div
+          className="card mb-4"
+          style={{
+            borderLeft: '4px solid #f59e0b',
+            backgroundColor: '#fffbeb',
+            padding: '1rem 1.25rem',
+            marginTop: '1rem',
+            marginBottom: '1rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
+              <div style={{ fontSize: '1.25rem', lineHeight: '1.5rem' }}>ℹ️</div>
+              <div>
+                <strong style={{ color: '#92400e', fontSize: '0.9375rem', display: 'block' }}>
+                  Regional Exchange Rate Update Available
+                </strong>
+                <span style={{ color: '#78350f', fontSize: '0.875rem' }}>
+                  This quote is using a saved FX rate of <strong>{quoteRate.toFixed(6)}</strong>
+                  {quote.fx_rate_as_of ? ` (${quote.fx_rate_as_of})` : ''}.
+                  The current regional FX rate is <strong>{regionRate.toFixed(6)}</strong>
+                  {activeRegion?.fx_rate_as_of ? ` (${activeRegion.fx_rate_as_of})` : ''}.
+                  Existing line items and quantities are preserved when refreshed.
+                </span>
+              </div>
+            </div>
+            {canRefreshFx && (
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => setFxRefreshModalOpen(true)}
+                disabled={isSubmittingWorkflow || isRefreshingFx}
+                style={{ padding: '0.4rem 0.8rem', fontSize: '0.875rem' }}
+              >
+                Refresh FX Rate
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* CHANGES REQUESTED BANNER */}
       {currentStatus === 'changes_requested' && (
@@ -295,7 +418,16 @@ export default function QuoteDetailPage() {
             <dt>Currency</dt>
             <dd>{quote.currency_code}</dd>
             <dt>FX Rate</dt>
-            <dd>{quote.fx_rate_to_usd ? parseFloat(quote.fx_rate_to_usd).toFixed(4) : '-'}</dd>
+            <dd>
+              <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>
+                {quote.fx_rate_to_usd ? parseFloat(quote.fx_rate_to_usd).toFixed(6) : '-'}
+              </span>
+              {quote.fx_rate_as_of && (
+                <span style={{ display: 'block', fontSize: '0.75rem', color: '#6b7280' }}>
+                  As of: {quote.fx_rate_as_of}
+                </span>
+              )}
+            </dd>
             <dt>Tax</dt>
             <dd>{quote.tax_amount > 0 ? `Yes` : 'No'}</dd>
           </dl>
@@ -520,11 +652,22 @@ export default function QuoteDetailPage() {
           )}
           {(currentStatus === 'draft' || currentStatus === 'changes_requested') && (
             <>
+              {canRefreshFx && (
+                <button
+                  type="button"
+                  className="btn btn-outline-primary btn-lg"
+                  onClick={() => setFxRefreshModalOpen(true)}
+                  disabled={isSubmittingWorkflow || isRefreshingFx}
+                  title="Explicitly refresh quotation exchange rate to match active regional rate"
+                >
+                  Refresh FX Rate
+                </button>
+              )}
               <button
                 type="button"
                 className="btn btn-secondary btn-lg"
                 onClick={() => navigate(`/quotes/${quote.id}/edit`)}
-                disabled={isSubmittingWorkflow}
+                disabled={isSubmittingWorkflow || isRefreshingFx}
               >
                 {currentStatus === 'changes_requested' ? 'Edit Quote' : 'Edit Draft'}
               </button>
@@ -532,7 +675,7 @@ export default function QuoteDetailPage() {
                 type="button"
                 className="btn btn-primary btn-lg"
                 onClick={() => handleWorkflowAction('submit')}
-                disabled={isSubmittingWorkflow}
+                disabled={isSubmittingWorkflow || isRefreshingFx}
               >
                 {currentStatus === 'changes_requested' ? 'Resubmit for Approval' : 'Submit for Approval'}
               </button>
@@ -599,6 +742,109 @@ export default function QuoteDetailPage() {
                   <button type="button" className="btn btn-secondary" onClick={() => { setWorkflowAction(null); setWorkflowComment(''); }} disabled={isSubmittingWorkflow}>Cancel</button>
                   <button type="button" className={`btn ${workflowAction === 'request_changes' ? 'btn-danger' : 'btn-warning'}`} onClick={() => handleWorkflowAction(workflowAction)} disabled={!workflowComment.trim() || isSubmittingWorkflow}>
                     {isSubmittingWorkflow ? 'Submitting...' : 'Confirm'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FX REFRESH CONFIRMATION MODAL */}
+      {fxRefreshModalOpen && (
+        <div
+          className="modal-backdrop"
+          style={{
+            display: 'block',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 1040,
+          }}
+        >
+          <div className="modal" style={{ display: 'block', zIndex: 1050 }} tabIndex="-1">
+            <div className="modal-dialog">
+              <div className="modal-content">
+                <div className="modal-header">
+                  <h5 className="modal-title">Confirm Foreign Exchange Rate Refresh</h5>
+                  <button
+                    type="button"
+                    className="btn-close"
+                    onClick={() => {
+                      setFxRefreshModalOpen(false);
+                      setFxRefreshComment('');
+                    }}
+                    disabled={isRefreshingFx}
+                  ></button>
+                </div>
+                <div className="modal-body">
+                  <p style={{ fontSize: '0.9rem', color: '#374151', lineHeight: '1.4', marginBottom: '0.75rem' }}>
+                    This will explicitly refresh the quotation's exchange rate from{' '}
+                    <strong>{quoteRate ? quoteRate.toFixed(6) : '-'}</strong> to the region's current rate of{' '}
+                    <strong>{regionRate ? regionRate.toFixed(6) : '-'}</strong> ({quote.currency_code}).
+                  </p>
+                  <div
+                    style={{
+                      backgroundColor: '#eff6ff',
+                      border: '1px solid #bfdbfe',
+                      borderRadius: '0.375rem',
+                      padding: '0.75rem',
+                      marginBottom: '1rem',
+                      fontSize: '0.8125rem',
+                      color: '#1e40af',
+                    }}
+                  >
+                    <strong>Impact Notice:</strong>
+                    <ul style={{ margin: '0.25rem 0 0 1rem', padding: 0 }}>
+                      <li>Existing bill of materials, quantities, and catalog items remain unchanged.</li>
+                      <li>Local currency totals and tax amount will be recomputed with the new rate.</li>
+                      <li>Quote version will increment from v{quote.version} to v{quote.version + 1}.</li>
+                      <li>An audit log record will be permanently saved.</li>
+                    </ul>
+                  </div>
+
+                  <div className="form-group">
+                    <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#374151', marginBottom: '0.25rem' }}>
+                      Reason for Refresh (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={fxRefreshComment}
+                      onChange={(e) => setFxRefreshComment(e.target.value)}
+                      placeholder="e.g. Approved quarterly FX adjustment"
+                      disabled={isRefreshingFx}
+                      style={{
+                        width: '100%',
+                        padding: '0.5rem 0.75rem',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '0.375rem',
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      setFxRefreshModalOpen(false);
+                      setFxRefreshComment('');
+                    }}
+                    disabled={isRefreshingFx}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleConfirmRefreshFx}
+                    disabled={isRefreshingFx}
+                  >
+                    {isRefreshingFx ? 'Refreshing Rate...' : 'Confirm Refresh'}
                   </button>
                 </div>
               </div>

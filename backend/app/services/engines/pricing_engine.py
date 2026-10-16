@@ -14,7 +14,13 @@ class PricingEngineError(Exception):
 
 class PricingEngine:
     @staticmethod
-    def calculate_and_save_quote(db: Session, quote: Quote, payload: RequirementPayload, bom: List[BOMLineSpec]) -> Quote:
+    def calculate_and_save_quote(
+        db: Session,
+        quote: Quote,
+        payload: RequirementPayload,
+        bom: List[BOMLineSpec],
+        refresh_fx_rate: bool = False
+    ) -> Quote:
         """
         Consumes the RequirementPayload and abstract BOMLineSpec list,
         fetches actual catalog pricing using lookup_key, computes financials,
@@ -27,14 +33,29 @@ class PricingEngine:
         if not region:
             raise PricingEngineError("Quote has no associated region.")
 
-        # FX Validation
-        fx_rate = Decimal("1.000000")
+        # FX Validation and Snapshot Preservation
         currency_code = "USD"
+        fx_rate = Decimal("1.000000")
+        fx_as_of = quote.fx_rate_as_of or region.fx_rate_as_of
+
         if region.currency_code and region.currency_code.upper() != "USD":
             currency_code = region.currency_code.upper()
-            if not region.fx_rate_to_usd or region.fx_rate_to_usd <= 0:
-                raise PricingEngineError(f"Cannot calculate quote: Region '{region.country_name}' requires a valid positive fx_rate_to_usd.")
-            fx_rate = Decimal(str(region.fx_rate_to_usd))
+            # If quote already has a saved fx_rate_to_usd for this currency, preserve it by default on ordinary edits & recalculations
+            if (
+                not refresh_fx_rate
+                and quote.version is not None
+                and quote.version > 0
+                and quote.currency_code == currency_code
+                and quote.fx_rate_to_usd is not None
+                and quote.fx_rate_to_usd > 0
+            ):
+                fx_rate = Decimal(str(quote.fx_rate_to_usd))
+                fx_as_of = quote.fx_rate_as_of or region.fx_rate_as_of
+            else:
+                if not region.fx_rate_to_usd or region.fx_rate_to_usd <= 0:
+                    raise PricingEngineError(f"Cannot calculate quote: Region '{region.country_name}' requires a valid positive fx_rate_to_usd.")
+                fx_rate = Decimal(str(region.fx_rate_to_usd))
+                fx_as_of = region.fx_rate_as_of
 
         # Clear existing line items since this is a full recalculation
         for item in list(quote.line_items):
@@ -142,7 +163,7 @@ class PricingEngine:
         # Update Quote snapshots and totals
         quote.currency_code = currency_code
         quote.fx_rate_to_usd = fx_rate
-        quote.fx_rate_as_of = region.fx_rate_as_of
+        quote.fx_rate_as_of = fx_as_of
         quote.tax_enabled = tax_enabled
         quote.tax_rate_percent = tax_rate
 

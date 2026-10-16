@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import PageHeader from '../components/common/PageHeader';
 import { catalogApi } from '../api/catalogApi';
 import { solutionApi } from '../api/solutionApi';
+import { regionApi } from '../api/regionApi';
 import { useAuth, PERMISSIONS, ROLES } from '../auth/AuthContext';
 
 function formatCurrencyCell(value) {
@@ -27,6 +28,7 @@ export default function CatalogPricingPage() {
   const isAdmin = hasPermission(PERMISSIONS.SUPER_ADMIN);
   const canManageSolutions = hasPermission(PERMISSIONS.SOLUTION_ADMIN);
   const canEditMargin = hasPermission(PERMISSIONS.FINANCE_TAX_ADMIN);
+  const canEditFx = hasPermission(PERMISSIONS.FINANCE_TAX_ADMIN);
   const hasFullCostVisibility = hasPermission(PERMISSIONS.COST_VISIBILITY);
 
   const [solutions, setSolutions] = useState([]);
@@ -34,6 +36,20 @@ export default function CatalogPricingPage() {
   const [catalogSettings, setCatalogSettings] = useState({
     catalog_entry_cost_visibility: true,
   });
+
+  const [regions, setRegions] = useState([]);
+  const [isLoadingRegions, setIsLoadingRegions] = useState(false);
+  const [fxModalOpen, setFxModalOpen] = useState(false);
+  const [editingRegion, setEditingRegion] = useState(null);
+  const [fxForm, setFxForm] = useState({
+    region_id: '',
+    fx_rate_to_usd: '',
+    currency_code: '',
+    fx_rate_as_of: '',
+    notes: '',
+  });
+  const [fxModalError, setFxModalError] = useState('');
+  const [isSavingFx, setIsSavingFx] = useState(false);
 
   const [items, setItems] = useState([]);
   const [isLoadingSolutions, setIsLoadingSolutions] = useState(true);
@@ -96,14 +112,20 @@ export default function CatalogPricingPage() {
 
   const loadInitialData = useCallback(async () => {
     setIsLoadingSolutions(true);
+    setIsLoadingRegions(true);
     setError('');
     try {
-      const [solsData, settingsData] = await Promise.all([
+      const [solsData, settingsData, regionsData] = await Promise.all([
         solutionApi.getSolutions(),
         catalogApi.getCatalogSettings(),
+        regionApi.getRegions().catch((err) => {
+          console.warn('Failed to load regions:', err);
+          return [];
+        }),
       ]);
       setSolutions(solsData);
       setCatalogSettings(settingsData);
+      setRegions(regionsData || []);
       if (solsData.length > 0) {
         const defaultSol =
           solsData.find((s) => s.name === 'WTVision Graphics') || solsData[0];
@@ -119,6 +141,7 @@ export default function CatalogPricingPage() {
       setError(err.message || 'Failed to load catalog configuration.');
     } finally {
       setIsLoadingSolutions(false);
+      setIsLoadingRegions(false);
     }
   }, []);
 
@@ -246,6 +269,69 @@ export default function CatalogPricingPage() {
       setError(err.message || 'Failed to update solution margin.');
     } finally {
       setIsSavingMargin(false);
+    }
+  };
+
+  const openEditFxModal = (regionToEdit = null) => {
+    setFxModalError('');
+    const target = regionToEdit || (regions.length > 0 ? regions[0] : null);
+    if (target) {
+      setEditingRegion(target);
+      setFxForm({
+        region_id: String(target.id),
+        fx_rate_to_usd: target.fx_rate_to_usd !== null && target.fx_rate_to_usd !== undefined ? String(target.fx_rate_to_usd) : '',
+        currency_code: target.currency_code || '',
+        fx_rate_as_of: target.fx_rate_as_of || new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC',
+        notes: '',
+      });
+    }
+    setFxModalOpen(true);
+  };
+
+  const handleFxRegionChange = (e) => {
+    const regId = e.target.value;
+    const target = regions.find((r) => String(r.id) === String(regId));
+    if (target) {
+      setEditingRegion(target);
+      setFxForm((prev) => ({
+        ...prev,
+        region_id: String(target.id),
+        currency_code: target.currency_code || '',
+        fx_rate_to_usd: target.fx_rate_to_usd !== null && target.fx_rate_to_usd !== undefined ? String(target.fx_rate_to_usd) : '',
+        fx_rate_as_of: target.fx_rate_as_of || new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC',
+      }));
+    }
+  };
+
+  const handleSaveFxRate = async (e) => {
+    e.preventDefault();
+    if (!editingRegion) return;
+    const rateNum = Number(fxForm.fx_rate_to_usd);
+    if (Number.isNaN(rateNum) || rateNum <= 0) {
+      setFxModalError('FX rate must be a valid positive number greater than 0.');
+      return;
+    }
+    setIsSavingFx(true);
+    setFxModalError('');
+    setError('');
+    setSuccessMessage('');
+    try {
+      const payload = {
+        fx_rate_to_usd: rateNum,
+        currency_code: editingRegion.currency_code,
+        fx_rate_as_of: fxForm.fx_rate_as_of.trim() || undefined,
+        notes: fxForm.notes.trim() || undefined,
+      };
+      const updated = await regionApi.updateRegionFxRate(editingRegion.id, payload);
+      setRegions((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      setSuccessMessage(
+        `Updated FX rate for ${updated.country_name} (${updated.currency_code}) to ${Number(updated.fx_rate_to_usd).toFixed(6)}.`
+      );
+      setFxModalOpen(false);
+    } catch (err) {
+      setFxModalError(err.message || 'Failed to update FX rate.');
+    } finally {
+      setIsSavingFx(false);
     }
   };
 
@@ -873,6 +959,114 @@ export default function CatalogPricingPage() {
             </p>
           </div>
         )}
+      </div>
+
+      {/* Foreign Exchange Rates Panel */}
+      <div
+        className="card mb-4"
+        style={{
+          padding: '1.25rem',
+          backgroundColor: '#ffffff',
+          border: '1px solid #e2e8f0',
+          borderRadius: '0.5rem',
+          marginBottom: '1.5rem',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '0.75rem',
+            flexWrap: 'wrap',
+            gap: '0.5rem',
+          }}
+        >
+          <div>
+            <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: '#1e293b' }}>
+              Foreign Exchange Rates
+            </h3>
+            <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: '#64748b' }}>
+              Manual exchange rates to USD. Changes apply to new quotations only; existing drafts preserve their saved rates.
+            </p>
+          </div>
+          {canEditFx && (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => openEditFxModal()}
+              style={{ padding: '0.375rem 0.75rem', fontSize: '0.8125rem' }}
+            >
+              Update Exchange Rate
+            </button>
+          )}
+        </div>
+
+        <div className="table-container">
+          <table className="data-table" style={{ width: '100%' }}>
+            <thead>
+              <tr>
+                <th style={{ width: '25%' }}>Region</th>
+                <th style={{ width: '15%' }}>Currency</th>
+                <th style={{ width: '25%' }}>FX Rate to USD</th>
+                <th style={{ width: '20%' }}>Effective / As Of</th>
+                {canEditFx && <th style={{ width: '15%', textAlign: 'center' }}>Action</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {regions.length > 0 ? (
+                regions.map((reg) => (
+                  <tr key={reg.id}>
+                    <td>
+                      <strong>{reg.country_name}</strong>
+                      {reg.legal_entity_name && (
+                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                          {reg.legal_entity_name}
+                        </div>
+                      )}
+                    </td>
+                    <td>
+                      <span className="badge badge-secondary" style={{ fontWeight: 600 }}>
+                        {reg.currency_code}
+                      </span>
+                    </td>
+                    <td>
+                      <span style={{ fontFamily: 'monospace', fontSize: '0.9rem', fontWeight: 600, color: '#0f172a' }}>
+                        {reg.fx_rate_to_usd !== null && reg.fx_rate_to_usd !== undefined
+                          ? Number(reg.fx_rate_to_usd).toFixed(6)
+                          : '1.000000'}
+                      </span>
+                      <span style={{ fontSize: '0.75rem', color: '#64748b', marginLeft: '0.375rem' }}>
+                        (1 {reg.currency_code} = {reg.fx_rate_to_usd !== null && reg.fx_rate_to_usd !== undefined ? Number(reg.fx_rate_to_usd).toFixed(6) : '1.000000'} USD)
+                      </span>
+                    </td>
+                    <td style={{ fontSize: '0.8125rem', color: '#475569' }}>
+                      {reg.fx_rate_as_of || 'Default'}
+                    </td>
+                    {canEditFx && (
+                      <td style={{ textAlign: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn btn-outline-secondary"
+                          onClick={() => openEditFxModal(reg)}
+                          style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }}
+                        >
+                          Edit
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={canEditFx ? 5 : 4} style={{ textAlign: 'center', padding: '1.5rem', color: '#64748b' }}>
+                    {isLoadingRegions ? 'Loading regional FX rates...' : 'No regions configured.'}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Excel Import / Export & Reset Toolbar */}
@@ -1630,6 +1824,206 @@ export default function CatalogPricingPage() {
                   disabled={isSavingSolution}
                 >
                   {isSavingSolution ? 'Saving...' : 'Save Solution'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* FX Rate Edit Modal */}
+      {fxModalOpen && (
+        <div
+          className="modal-overlay"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+        >
+          <div
+            className="modal-container"
+            style={{
+              backgroundColor: '#ffffff',
+              borderRadius: '0.5rem',
+              padding: '1.5rem',
+              width: '100%',
+              maxWidth: '480px',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
+            }}
+          >
+            <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.125rem', fontWeight: 600, color: '#1e293b' }}>
+              Edit Foreign Exchange Rate
+            </h3>
+
+            {fxModalError && (
+              <div
+                className="alert alert-danger"
+                style={{
+                  marginBottom: '1rem',
+                  padding: '0.75rem',
+                  backgroundColor: '#fef2f2',
+                  color: '#991b1b',
+                  border: '1px solid #fecaca',
+                  borderRadius: '0.375rem',
+                  fontSize: '0.875rem',
+                }}
+              >
+                {fxModalError}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveFxRate}>
+              <div style={{ marginBottom: '1rem' }}>
+                <label
+                  htmlFor="fx-region-select"
+                  style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#334155', marginBottom: '0.375rem' }}
+                >
+                  Region
+                </label>
+                <select
+                  id="fx-region-select"
+                  className="form-select"
+                  value={fxForm.region_id}
+                  onChange={handleFxRegionChange}
+                  disabled={isSavingFx}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem 0.75rem',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '0.375rem',
+                  }}
+                  required
+                >
+                  {regions.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.country_name} ({r.currency_code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: '1rem' }}>
+                <label
+                  style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#334155', marginBottom: '0.375rem' }}
+                >
+                  Currency (From Selected Region)
+                </label>
+                <input
+                  type="text"
+                  value={fxForm.currency_code}
+                  readOnly
+                  disabled
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem 0.75rem',
+                    backgroundColor: '#f1f5f9',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '0.375rem',
+                    color: '#475569',
+                    fontWeight: 600,
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '1rem' }}>
+                <label
+                  htmlFor="fx-rate-input"
+                  style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#334155', marginBottom: '0.375rem' }}
+                >
+                  FX Rate to USD (USD value of 1 {fxForm.currency_code || 'local unit'})
+                </label>
+                <input
+                  id="fx-rate-input"
+                  type="number"
+                  step="0.000001"
+                  min="0.000001"
+                  value={fxForm.fx_rate_to_usd}
+                  onChange={(e) => setFxForm((prev) => ({ ...prev, fx_rate_to_usd: e.target.value }))}
+                  placeholder="e.g. 0.012000"
+                  disabled={isSavingFx}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem 0.75rem',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '0.375rem',
+                    fontFamily: 'monospace',
+                  }}
+                  required
+                />
+                <span style={{ fontSize: '0.75rem', color: '#64748b', display: 'block', marginTop: '0.25rem' }}>
+                  Example: 1 USD = 80 INR &rarr; Rate = 0.012500. Must be &gt; 0.
+                </span>
+              </div>
+
+              <div style={{ marginBottom: '1rem' }}>
+                <label
+                  htmlFor="fx-as-of-input"
+                  style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#334155', marginBottom: '0.375rem' }}
+                >
+                  Effective / As-Of Date
+                </label>
+                <input
+                  id="fx-as-of-input"
+                  type="text"
+                  value={fxForm.fx_rate_as_of}
+                  onChange={(e) => setFxForm((prev) => ({ ...prev, fx_rate_as_of: e.target.value }))}
+                  placeholder="e.g. 2026-10-16 12:00:00 UTC"
+                  disabled={isSavingFx}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem 0.75rem',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '0.375rem',
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label
+                  htmlFor="fx-notes-input"
+                  style={{ display: 'block', fontSize: '0.875rem', fontWeight: 600, color: '#334155', marginBottom: '0.375rem' }}
+                >
+                  Notes (Optional)
+                </label>
+                <input
+                  id="fx-notes-input"
+                  type="text"
+                  value={fxForm.notes}
+                  onChange={(e) => setFxForm((prev) => ({ ...prev, notes: e.target.value }))}
+                  placeholder="e.g. Approved quarterly rate update"
+                  disabled={isSavingFx}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem 0.75rem',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '0.375rem',
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setFxModalOpen(false)}
+                  disabled={isSavingFx}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={isSavingFx}
+                >
+                  {isSavingFx ? 'Saving Rate...' : 'Save Rate'}
                 </button>
               </div>
             </form>

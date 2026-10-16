@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import text
 from typing import List, Optional
 from datetime import datetime
+from decimal import Decimal
 import logging
 
 from backend.app.api.deps import get_db, get_current_user, require_permission, has_permission
@@ -15,7 +16,7 @@ from backend.app.models.solution import Solution
 from backend.app.schemas.quote import (
     QuoteCreate, QuoteResponse, QuoteUpdate, QuoteDeleteAction, QuoteRecalculate, QuoteSummary,
     QuoteQueueItem, QuoteSubmitAction, QuoteApproveAction, QuoteRequestChangesAction, QuoteOverrideApproveAction,
-    QuoteUrgentAction, QuoteApprovalLogResponse
+    QuoteUrgentAction, QuoteApprovalLogResponse, QuoteRefreshFXAction
 )
 from backend.app.schemas.requirement import RequirementPayload
 from backend.app.services.engines.requirement_engine import parse_and_evaluate_requirements, RequirementEngineError
@@ -430,3 +431,76 @@ def get_quote_history(quote_id: int, db: Session = Depends(get_db), current_user
         raise HTTPException(status_code=403, detail="Forbidden: You do not own this quote")
     logs = db.query(QuoteApprovalLog).filter(QuoteApprovalLog.quote_id == quote_id).order_by(QuoteApprovalLog.created_at.asc(), QuoteApprovalLog.id.asc()).all()
     return logs
+
+@router.post("/{quote_id}/refresh-fx", response_model=QuoteResponse)
+def refresh_quote_fx_rate(
+    quote_id: int,
+    payload: QuoteRefreshFXAction,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("finance_tax_admin"))
+):
+    committed = False
+    try:
+        quote = db.query(Quote).filter(Quote.id == quote_id).with_for_update().first()
+        if not quote or quote.deleted_at is not None:
+            raise HTTPException(status_code=404, detail="Quote not found")
+
+        if quote.status not in (QuoteStatus.DRAFT, QuoteStatus.CHANGES_REQUESTED):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot refresh FX rate on a quote in {quote.status.value.upper()} status. Historical quotes are immutable."
+            )
+
+        if payload.expected_version != quote.version:
+            raise HTTPException(status_code=409, detail="Version mismatch: Quote was modified by another user.")
+
+        region = db.query(Region).filter(Region.id == quote.region_id).first()
+        if not region:
+            raise HTTPException(status_code=404, detail="Associated region not found")
+
+        if not region.fx_rate_to_usd or region.fx_rate_to_usd <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot refresh: Region '{region.country_name}' does not have a valid positive FX rate configured."
+            )
+
+        old_fx = quote.fx_rate_to_usd
+        new_fx = Decimal(str(region.fx_rate_to_usd))
+
+        # Recalculate local sell amount & tax without modifying the BoQ or items
+        subtotal_sell_usd = Decimal(str(quote.subtotal_sell_usd))
+        total_sell_local = subtotal_sell_usd / new_fx
+
+        tax_amount = Decimal("0.0")
+        if quote.tax_enabled and quote.tax_rate_percent is not None:
+            tax_amount = total_sell_local * (Decimal(str(quote.tax_rate_percent)) / Decimal("100.0"))
+        total_sell_local += tax_amount
+
+        quote.fx_rate_to_usd = new_fx
+        quote.fx_rate_as_of = region.fx_rate_as_of
+        quote.tax_amount = tax_amount
+        quote.total_sell_local = total_sell_local
+        quote.version += 1
+        quote.last_edited_by_user_id = current_user.id
+
+        reason_suffix = f" Reason: {payload.comment.strip()}" if payload.comment and payload.comment.strip() else ""
+        comment_text = f"FX rate refreshed: {old_fx} -> {new_fx} (Region: {region.country_name}, Currency: {quote.currency_code}).{reason_suffix}"
+        _log_approval(db, quote, "REFRESH_FX_RATE", quote.status, quote.status, current_user.id, comment_text)
+
+        db.commit()
+        committed = True
+        db.refresh(quote)
+        resp = QuoteResponse.model_validate(quote, from_attributes=True).model_dump()
+        return mask_quote_financials(resp, current_user)
+    except HTTPException:
+        if not committed:
+            db.rollback()
+        raise
+    except Exception as e:
+        if not committed:
+            db.rollback()
+            logger.error(f"Error refreshing FX rate for quote {quote_id}: {e}")
+            raise HTTPException(status_code=500, detail="An unexpected error occurred while processing the request")
+        else:
+            logger.error(f"Error retrieving quote after refreshing FX rate: {e}")
+            raise HTTPException(status_code=500, detail="The quote FX rate was refreshed successfully, but an error occurred retrieving the updated data")
