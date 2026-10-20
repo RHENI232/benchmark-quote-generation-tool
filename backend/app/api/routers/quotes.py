@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
@@ -16,14 +16,21 @@ from backend.app.models.solution import Solution
 from backend.app.schemas.quote import (
     QuoteCreate, QuoteResponse, QuoteUpdate, QuoteDeleteAction, QuoteRecalculate, QuoteSummary,
     QuoteQueueItem, QuoteSubmitAction, QuoteApproveAction, QuoteRequestChangesAction, QuoteOverrideApproveAction,
-    QuoteUrgentAction, QuoteApprovalLogResponse, QuoteRefreshFXAction
+    QuoteUrgentAction, QuoteApprovalLogResponse, QuoteRefreshFXAction, QuoteRevisionResponse,
+    QuoteRevisionComparisonResponse
 )
 from backend.app.schemas.requirement import RequirementPayload
 from backend.app.services.engines.requirement_engine import parse_and_evaluate_requirements, RequirementEngineError
 from backend.app.services.engines.pricing_engine import PricingEngine, PricingEngineError
 from backend.app.services.export_service import generate_customer_copy, generate_internal_copy, generate_tracking_sheet
 from backend.app.services.pdf_service import generate_customer_pdf
-from backend.app.services.revision_service import create_quote_revision
+from backend.app.services.revision_service import (
+    create_quote_revision,
+    get_quote_revisions,
+    get_quote_revision_by_number,
+    mask_revision_snapshot,
+    compare_quote_revisions,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -511,6 +518,199 @@ def get_quote_history(quote_id: int, db: Session = Depends(get_db), current_user
         raise HTTPException(status_code=403, detail="Forbidden: You do not own this quote")
     logs = db.query(QuoteApprovalLog).filter(QuoteApprovalLog.quote_id == quote_id).order_by(QuoteApprovalLog.created_at.asc(), QuoteApprovalLog.id.asc()).all()
     return logs
+
+
+@router.get("/{quote_id}/revisions", response_model=List[QuoteRevisionResponse])
+def list_quote_revisions(
+    quote_id: int,
+    skip: int = 0,
+    limit: int = 50,
+    order: str = "asc",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("sales_user")),
+):
+    """
+    Retrieve deterministic, paginated historical revisions for a quote.
+
+    Ordering:
+    - Default is 'asc' (chronological: revision 1, 2, ...).
+    - Can specify order='desc' for reverse chronological ordering.
+
+    Pagination:
+    - skip: Number of revisions to skip (offset). Must be >= 0.
+    - limit: Maximum number of revisions to return. Must be >= 1. Clamped to max 100.
+
+    Permissions:
+    - Requires authenticated user with 'sales_user' permission.
+    - Sales tier users can only view revisions of quotes they own.
+    - Cost and margin fields within snapshot_data are masked to None for users without 'cost_visibility' (Sales, Catalog Entry).
+    """
+    if skip < 0:
+        raise HTTPException(status_code=400, detail="Invalid skip parameter: must be >= 0")
+    if limit < 1:
+        raise HTTPException(status_code=400, detail="Invalid limit parameter: must be >= 1")
+    if limit > 100:
+        limit = 100
+    if order.lower() not in ("asc", "desc"):
+        raise HTTPException(status_code=400, detail="Invalid order parameter: must be 'asc' or 'desc'")
+
+    quote = db.query(Quote).filter(Quote.id == quote_id).first()
+    if not quote or quote.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Quote not found")
+
+    if current_user.role_tier == RoleTier.SALES and quote.created_by_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden: You do not own this quote")
+
+    revisions = get_quote_revisions(
+        db=db,
+        quote_id=quote_id,
+        skip=skip,
+        limit=limit,
+        order=order
+    )
+
+    result = []
+    for rev in revisions:
+        rev_dict = QuoteRevisionResponse.model_validate(rev, from_attributes=True).model_dump()
+        rev_dict["snapshot_data"] = mask_revision_snapshot(rev_dict["snapshot_data"], current_user)
+        result.append(rev_dict)
+
+    return result
+
+
+@router.get("/{quote_id}/revisions/compare", response_model=QuoteRevisionComparisonResponse)
+def compare_revisions_endpoint(
+    quote_id: int,
+    base_revision: Optional[int] = Query(None, description="Base revision number to compare from"),
+    target_revision: Optional[int] = Query(None, description="Target revision number to compare to"),
+    from_revision: Optional[int] = Query(None, description="Alias for base_revision"),
+    to_revision: Optional[int] = Query(None, description="Alias for target_revision"),
+    rev_a: Optional[int] = Query(None, description="Alias for base_revision"),
+    rev_b: Optional[int] = Query(None, description="Alias for target_revision"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("sales_user")),
+):
+    """
+    Compare two historical revisions of a quote.
+
+    Requirements:
+    - base_revision (or from_revision / rev_a): Integer >= 1
+    - target_revision (or to_revision / rev_b): Integer >= 1
+    - Authenticates the caller with 'sales_user' permission.
+    - Enforces quote ownership for Sales tier.
+    - Rejects missing revisions and cross-quote comparisons.
+    - Applies role-based financial confidentiality masking before difference calculation.
+    """
+    base_num = base_revision if base_revision is not None else (from_revision if from_revision is not None else rev_a)
+    target_num = target_revision if target_revision is not None else (to_revision if to_revision is not None else rev_b)
+
+    if base_num is None or target_num is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Comparison requires two revision numbers (e.g. ?base_revision=1&target_revision=2 or ?from_revision=1&to_revision=2)"
+        )
+
+    if base_num < 1 or target_num < 1:
+        raise HTTPException(status_code=404, detail="Revision not found")
+
+    quote = db.query(Quote).filter(Quote.id == quote_id).first()
+    if not quote or quote.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Quote not found")
+
+    if current_user.role_tier == RoleTier.SALES and quote.created_by_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden: You do not own this quote")
+
+    try:
+        comparison = compare_quote_revisions(
+            db=db,
+            quote_id=quote_id,
+            base_revision_number=base_num,
+            target_revision_number=target_num,
+            current_user=current_user
+        )
+        return comparison
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/{quote_id}/revisions/{base_revision}/compare/{target_revision}", response_model=QuoteRevisionComparisonResponse)
+def compare_revisions_path_endpoint(
+    quote_id: int,
+    base_revision: int,
+    target_revision: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("sales_user")),
+):
+    """
+    Path-based alias for comparing two historical revisions of a quote.
+    """
+    if base_revision < 1 or target_revision < 1:
+        raise HTTPException(status_code=404, detail="Revision not found")
+
+    quote = db.query(Quote).filter(Quote.id == quote_id).first()
+    if not quote or quote.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Quote not found")
+
+    if current_user.role_tier == RoleTier.SALES and quote.created_by_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden: You do not own this quote")
+
+    try:
+        comparison = compare_quote_revisions(
+            db=db,
+            quote_id=quote_id,
+            base_revision_number=base_revision,
+            target_revision_number=target_revision,
+            current_user=current_user
+        )
+        return comparison
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/{quote_id}/revisions/{revision_number}", response_model=QuoteRevisionResponse)
+def get_quote_revision(
+    quote_id: int,
+    revision_number: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("sales_user")),
+):
+    """
+    Retrieve a specific historical revision snapshot for a quote by revision number.
+
+    Parameters:
+    - quote_id: The ID of the parent quote.
+    - revision_number: The sequential revision number (1-based).
+
+    Behavior:
+    - Verifies parent quote existence and caller access before looking up the revision.
+    - Returns 404 if the quote does not exist or is soft-deleted.
+    - Returns 403 if a Sales user attempts to access a quote owned by another user.
+    - Returns 404 if the revision number does not exist for this quote.
+    - Returns the historical snapshot as stored without recalculation.
+    - Applies cost_visibility rules, masking cost and margin fields for Sales/Catalog Entry users.
+    """
+    if revision_number < 1:
+        raise HTTPException(status_code=404, detail="Revision not found")
+
+    quote = db.query(Quote).filter(Quote.id == quote_id).first()
+    if not quote or quote.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Quote not found")
+
+    if current_user.role_tier == RoleTier.SALES and quote.created_by_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Forbidden: You do not own this quote")
+
+    revision = get_quote_revision_by_number(
+        db=db,
+        quote_id=quote_id,
+        revision_number=revision_number
+    )
+    if not revision:
+        raise HTTPException(status_code=404, detail="Revision not found")
+
+    rev_dict = QuoteRevisionResponse.model_validate(revision, from_attributes=True).model_dump()
+    rev_dict["snapshot_data"] = mask_revision_snapshot(rev_dict["snapshot_data"], current_user)
+    return rev_dict
+
 
 @router.post("/{quote_id}/refresh-fx", response_model=QuoteResponse)
 def refresh_quote_fx_rate(

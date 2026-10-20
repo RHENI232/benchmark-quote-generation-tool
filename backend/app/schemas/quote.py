@@ -126,6 +126,67 @@ class QuoteRevisionResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+class RevisionSummary(BaseModel):
+    revision_number: int
+    quote_version: int
+    action: str
+    user_id: int
+    user_email: Optional[str] = None
+    user_role: Optional[str] = None
+    change_reason: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+class FieldDifference(BaseModel):
+    old: Any = None
+    new: Any = None
+    changed: bool = False
+
+class LineItemDifference(BaseModel):
+    catalog_item_id: Optional[int] = None
+    part_number: Optional[str] = None
+    brand: Optional[str] = None
+    description: str
+    section: Optional[str] = None
+    status: str  # "added", "removed", "modified", "unchanged"
+    quantity_old: Optional[int] = None
+    quantity_new: Optional[int] = None
+    unit_sell_price_old: Optional[str] = None
+    unit_sell_price_new: Optional[str] = None
+    line_sell_total_old: Optional[str] = None
+    line_sell_total_new: Optional[str] = None
+    unit_cost_price_old: Optional[str] = None
+    unit_cost_price_new: Optional[str] = None
+    line_cost_total_old: Optional[str] = None
+    line_cost_total_new: Optional[str] = None
+    margin_percent_old: Optional[str] = None
+    margin_percent_new: Optional[str] = None
+    field_changes: Dict[str, Dict[str, Any]] = {}
+
+class LineItemsComparison(BaseModel):
+    added: List[Dict[str, Any]] = []
+    removed: List[Dict[str, Any]] = []
+    modified: List[Dict[str, Any]] = []
+    unchanged: List[Dict[str, Any]] = []
+    total_added: int = 0
+    total_removed: int = 0
+    total_modified: int = 0
+    total_unchanged: int = 0
+
+class QuoteRevisionComparisonResponse(BaseModel):
+    quote_id: int
+    quote_ref_no: str
+    base_revision: RevisionSummary
+    target_revision: RevisionSummary
+    has_changes: bool
+    metadata_changes: Dict[str, Dict[str, Any]] = {}
+    requirement_changes: Dict[str, Dict[str, Any]] = {}
+    financial_changes: Dict[str, Dict[str, Any]] = {}
+    legal_entity_changes: Dict[str, Dict[str, Any]] = {}
+    line_items: LineItemsComparison
+
+
 class QuoteResponse(QuoteBase):
     id: int
     solution_id: int
