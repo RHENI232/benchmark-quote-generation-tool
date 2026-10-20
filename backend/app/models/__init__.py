@@ -3,7 +3,7 @@ from backend.app.models.user import User, RoleTier, AccountType
 from backend.app.models.region import Region
 from backend.app.models.solution import Solution
 from backend.app.models.catalog import CatalogItem, CatalogItemKind
-from backend.app.models.quote import Quote, QuoteLineItem, QuoteStatus
+from backend.app.models.quote import Quote, QuoteLineItem, QuoteStatus, QuoteApprovalLog, QuoteRevision
 from backend.app.models.invite import InviteToken, TokenType
 from backend.app.models.setting import AppSetting
 
@@ -19,6 +19,8 @@ __all__ = [
     "Quote",
     "QuoteLineItem",
     "QuoteStatus",
+    "QuoteApprovalLog",
+    "QuoteRevision",
     "InviteToken",
     "TokenType",
     "AppSetting",

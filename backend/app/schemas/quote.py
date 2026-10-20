@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, PlainSerializer
+from pydantic import BaseModel, ConfigDict, PlainSerializer, Field, field_validator
 from typing_extensions import Annotated
 from typing import Optional, Dict, List, Any
 from datetime import datetime
@@ -20,9 +20,33 @@ class QuoteCreate(QuoteBase):
 class QuoteRecalculate(BaseModel):
     requirement_data: Dict[str, Any]
     expected_version: int
+    change_reason: Optional[str] = Field(None, max_length=1000, description="Optional reason explaining why the quote was recalculated.")
+
+    @field_validator("change_reason")
+    @classmethod
+    def validate_change_reason(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            v = v.strip()
+            if not v:
+                return None
+            if len(v) > 1000:
+                raise ValueError("change_reason cannot exceed 1000 characters.")
+        return v
 
 class QuoteUpdate(QuoteCreate):
     expected_version: int
+    change_reason: Optional[str] = Field(None, max_length=1000, description="Optional reason explaining why the quote was edited.")
+
+    @field_validator("change_reason")
+    @classmethod
+    def validate_change_reason(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            v = v.strip()
+            if not v:
+                return None
+            if len(v) > 1000:
+                raise ValueError("change_reason cannot exceed 1000 characters.")
+        return v
 
 class QuoteSubmitAction(BaseModel):
     expected_version: int
@@ -84,6 +108,21 @@ class QuoteApprovalLogResponse(BaseModel):
     user_role: Optional[str] = None
     comment: Optional[str] = None
     created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+class QuoteRevisionResponse(BaseModel):
+    id: int
+    quote_id: int
+    revision_number: int
+    quote_version: int
+    action: str
+    user_id: int
+    user_email: Optional[str] = None
+    user_role: Optional[str] = None
+    change_reason: Optional[str] = None
+    created_at: datetime
+    snapshot_data: Dict[str, Any]
 
     model_config = ConfigDict(from_attributes=True)
 

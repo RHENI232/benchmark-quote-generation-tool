@@ -23,6 +23,7 @@ from backend.app.services.engines.requirement_engine import parse_and_evaluate_r
 from backend.app.services.engines.pricing_engine import PricingEngine, PricingEngineError
 from backend.app.services.export_service import generate_customer_copy, generate_internal_copy, generate_tracking_sheet
 from backend.app.services.pdf_service import generate_customer_pdf
+from backend.app.services.revision_service import create_quote_revision
 
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,12 @@ def mask_quote_financials(quote_data: dict, current_user: User) -> dict:
             item["line_cost_total"] = None
             item["margin_percent"] = None
     return quote_data
+
+def _clean_reason(reason: Optional[str]) -> Optional[str]:
+    if reason is None:
+        return None
+    cleaned = reason.strip()
+    return cleaned if cleaned else None
 
 @router.get("/approval-queue", response_model=List[QuoteQueueItem])
 def get_approval_queue(db: Session = Depends(get_db), current_user: User = Depends(require_permission("finance_tax_admin"))):
@@ -155,6 +162,15 @@ def create_quote(payload: QuoteCreate, db: Session = Depends(get_db), current_us
         db.flush()
         quote.region = region; quote.solution = solution
         PricingEngine.calculate_and_save_quote(db, quote, req_payload, bom)
+        rev = create_quote_revision(
+            db=db,
+            quote=quote,
+            action="INITIAL_CREATION",
+            user_id=current_user.id,
+            change_reason=None,
+            lock_quote=True,
+        )
+        db.add(rev)
         db.commit()
         db.refresh(quote)
         resp = QuoteResponse.model_validate(quote, from_attributes=True).model_dump()
@@ -184,7 +200,7 @@ def get_quote(quote_id: int, db: Session = Depends(get_db), current_user: User =
 @router.put("/{quote_id}", response_model=QuoteResponse)
 def update_quote(quote_id: int, payload: QuoteUpdate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("sales_user"))):
     try:
-        quote = db.query(Quote).filter(Quote.id == quote_id).first()
+        quote = db.query(Quote).filter(Quote.id == quote_id).with_for_update().first()
         if not quote or quote.deleted_at is not None: raise HTTPException(status_code=404, detail="Quote not found")
         if current_user.role_tier == RoleTier.SALES and quote.created_by_user_id != current_user.id: raise HTTPException(status_code=403, detail="Forbidden")
         if quote.status not in (QuoteStatus.DRAFT, QuoteStatus.CHANGES_REQUESTED): raise HTTPException(status_code=409, detail="Only DRAFT or CHANGES_REQUESTED quotes can be edited")
@@ -198,6 +214,15 @@ def update_quote(quote_id: int, payload: QuoteUpdate, db: Session = Depends(get_
         quote.client_name = payload.client_name; quote.attention = payload.attention; quote.description = payload.description
         quote.last_edited_by_user_id = current_user.id
         PricingEngine.calculate_and_save_quote(db, quote, req_payload, bom)
+        rev = create_quote_revision(
+            db=db,
+            quote=quote,
+            action="EDIT",
+            user_id=current_user.id,
+            change_reason=_clean_reason(payload.change_reason),
+            lock_quote=True,
+        )
+        db.add(rev)
         db.commit()
         db.refresh(quote)
         resp = QuoteResponse.model_validate(quote, from_attributes=True).model_dump()
@@ -206,6 +231,7 @@ def update_quote(quote_id: int, payload: QuoteUpdate, db: Session = Depends(get_
         db.rollback()
         raise HTTPException(status_code=409, detail=str(e))
     except HTTPException:
+        db.rollback()
         raise
     except Exception as e:
         db.rollback()
@@ -213,16 +239,25 @@ def update_quote(quote_id: int, payload: QuoteUpdate, db: Session = Depends(get_
 
 @router.post("/{quote_id}/recalculate", response_model=QuoteResponse)
 def recalculate_quote(quote_id: int, payload: QuoteRecalculate, db: Session = Depends(get_db), current_user: User = Depends(require_permission("sales_user"))):
-    quote = db.query(Quote).filter(Quote.id == quote_id).first()
-    if not quote or quote.deleted_at is not None: raise HTTPException(status_code=404, detail="Quote not found")
-    if current_user.role_tier == RoleTier.SALES and quote.created_by_user_id != current_user.id: raise HTTPException(status_code=403, detail="Forbidden")
-    if quote.status not in (QuoteStatus.DRAFT, QuoteStatus.CHANGES_REQUESTED): raise HTTPException(status_code=409, detail="Only DRAFT or CHANGES_REQUESTED quotes can be recalculated")
-    if payload.expected_version != quote.version: raise HTTPException(status_code=409, detail="Version mismatch")
     try:
+        quote = db.query(Quote).filter(Quote.id == quote_id).with_for_update().first()
+        if not quote or quote.deleted_at is not None: raise HTTPException(status_code=404, detail="Quote not found")
+        if current_user.role_tier == RoleTier.SALES and quote.created_by_user_id != current_user.id: raise HTTPException(status_code=403, detail="Forbidden")
+        if quote.status not in (QuoteStatus.DRAFT, QuoteStatus.CHANGES_REQUESTED): raise HTTPException(status_code=409, detail="Only DRAFT or CHANGES_REQUESTED quotes can be recalculated")
+        if payload.expected_version != quote.version: raise HTTPException(status_code=409, detail="Version mismatch")
         bom = parse_and_evaluate_requirements(quote.solution, payload.requirement_data)
         req_payload = RequirementPayload(**payload.requirement_data)
         PricingEngine.calculate_and_save_quote(db, quote, req_payload, bom)
         quote.last_edited_by_user_id = current_user.id
+        rev = create_quote_revision(
+            db=db,
+            quote=quote,
+            action="RECALCULATE",
+            user_id=current_user.id,
+            change_reason=_clean_reason(payload.change_reason),
+            lock_quote=True,
+        )
+        db.add(rev)
         db.commit()
         db.refresh(quote)
         resp = QuoteResponse.model_validate(quote, from_attributes=True).model_dump()
@@ -231,6 +266,7 @@ def recalculate_quote(quote_id: int, payload: QuoteRecalculate, db: Session = De
         db.rollback()
         raise HTTPException(status_code=409, detail=str(e))
     except HTTPException:
+        db.rollback()
         raise
     except Exception as e:
         db.rollback()
@@ -265,7 +301,7 @@ def _log_approval(db: Session, quote: Quote, action: str, from_status: QuoteStat
 def submit_quote(quote_id: int, payload: QuoteSubmitAction, db: Session = Depends(get_db), current_user: User = Depends(require_permission("sales_user"))):
     committed = False
     try:
-        quote = db.query(Quote).filter(Quote.id == quote_id).first()
+        quote = db.query(Quote).filter(Quote.id == quote_id).with_for_update().first()
         if not quote or quote.deleted_at is not None: raise HTTPException(status_code=404, detail="Quote not found")
         if current_user.role_tier == RoleTier.SALES and quote.created_by_user_id != current_user.id: raise HTTPException(status_code=403, detail="Forbidden")
         if payload.expected_version != quote.version: raise HTTPException(status_code=409, detail="Version mismatch")
@@ -274,12 +310,23 @@ def submit_quote(quote_id: int, payload: QuoteSubmitAction, db: Session = Depend
         quote.status = QuoteStatus.PENDING_APPROVAL
         quote.last_edited_by_user_id = current_user.id
         _log_approval(db, quote, "SUBMIT", old_status, QuoteStatus.PENDING_APPROVAL, current_user.id, payload.comment)
+        rev = create_quote_revision(
+            db=db,
+            quote=quote,
+            action="SUBMIT",
+            user_id=current_user.id,
+            change_reason=_clean_reason(payload.comment),
+            lock_quote=True,
+        )
+        db.add(rev)
         db.commit()
         committed = True
         db.refresh(quote)
         resp = QuoteResponse.model_validate(quote, from_attributes=True).model_dump()
         return mask_quote_financials(resp, current_user)
     except HTTPException:
+        if not committed:
+            db.rollback()
         raise
     except Exception as e:
         if not committed:
@@ -294,7 +341,7 @@ def submit_quote(quote_id: int, payload: QuoteSubmitAction, db: Session = Depend
 def approve_quote(quote_id: int, payload: QuoteApproveAction, db: Session = Depends(get_db), current_user: User = Depends(require_permission("finance_tax_admin"))):
     committed = False
     try:
-        quote = db.query(Quote).filter(Quote.id == quote_id).first()
+        quote = db.query(Quote).filter(Quote.id == quote_id).with_for_update().first()
         if not quote or quote.deleted_at is not None: raise HTTPException(status_code=404, detail="Quote not found")
         if payload.expected_version != quote.version: raise HTTPException(status_code=409, detail="Version mismatch")
         if quote.status != QuoteStatus.PENDING_APPROVAL: raise HTTPException(status_code=409, detail="Invalid transition")
@@ -302,12 +349,23 @@ def approve_quote(quote_id: int, payload: QuoteApproveAction, db: Session = Depe
         quote.status = QuoteStatus.APPROVED
         quote.last_edited_by_user_id = current_user.id
         _log_approval(db, quote, "APPROVE", old_status, QuoteStatus.APPROVED, current_user.id, payload.comment)
+        rev = create_quote_revision(
+            db=db,
+            quote=quote,
+            action="APPROVE",
+            user_id=current_user.id,
+            change_reason=_clean_reason(payload.comment),
+            lock_quote=True,
+        )
+        db.add(rev)
         db.commit()
         committed = True
         db.refresh(quote)
         resp = QuoteResponse.model_validate(quote, from_attributes=True).model_dump()
         return mask_quote_financials(resp, current_user)
     except HTTPException:
+        if not committed:
+            db.rollback()
         raise
     except Exception as e:
         if not committed:
@@ -322,7 +380,7 @@ def approve_quote(quote_id: int, payload: QuoteApproveAction, db: Session = Depe
 def request_changes_quote(quote_id: int, payload: QuoteRequestChangesAction, db: Session = Depends(get_db), current_user: User = Depends(require_permission("finance_tax_admin"))):
     committed = False
     try:
-        quote = db.query(Quote).filter(Quote.id == quote_id).first()
+        quote = db.query(Quote).filter(Quote.id == quote_id).with_for_update().first()
         if not quote or quote.deleted_at is not None: raise HTTPException(status_code=404, detail="Quote not found")
         if payload.expected_version != quote.version: raise HTTPException(status_code=409, detail="Version mismatch")
         if quote.status != QuoteStatus.PENDING_APPROVAL: raise HTTPException(status_code=409, detail="Invalid transition")
@@ -331,12 +389,23 @@ def request_changes_quote(quote_id: int, payload: QuoteRequestChangesAction, db:
         quote.status = QuoteStatus.CHANGES_REQUESTED
         quote.last_edited_by_user_id = current_user.id
         _log_approval(db, quote, "REQUEST_CHANGES", old_status, QuoteStatus.CHANGES_REQUESTED, current_user.id, payload.comment)
+        rev = create_quote_revision(
+            db=db,
+            quote=quote,
+            action="REQUEST_CHANGES",
+            user_id=current_user.id,
+            change_reason=_clean_reason(payload.comment),
+            lock_quote=True,
+        )
+        db.add(rev)
         db.commit()
         committed = True
         db.refresh(quote)
         resp = QuoteResponse.model_validate(quote, from_attributes=True).model_dump()
         return mask_quote_financials(resp, current_user)
     except HTTPException:
+        if not committed:
+            db.rollback()
         raise
     except Exception as e:
         if not committed:
@@ -351,7 +420,7 @@ def request_changes_quote(quote_id: int, payload: QuoteRequestChangesAction, db:
 def override_approve_quote(quote_id: int, payload: QuoteOverrideApproveAction, db: Session = Depends(get_db), current_user: User = Depends(require_permission("finance_tax_admin"))):
     committed = False
     try:
-        quote = db.query(Quote).filter(Quote.id == quote_id).first()
+        quote = db.query(Quote).filter(Quote.id == quote_id).with_for_update().first()
         if not quote or quote.deleted_at is not None: raise HTTPException(status_code=404, detail="Quote not found")
         if payload.expected_version != quote.version: raise HTTPException(status_code=409, detail="Version mismatch")
         if quote.status not in (QuoteStatus.DRAFT, QuoteStatus.CHANGES_REQUESTED, QuoteStatus.PENDING_APPROVAL): raise HTTPException(status_code=409, detail="Invalid transition")
@@ -360,12 +429,23 @@ def override_approve_quote(quote_id: int, payload: QuoteOverrideApproveAction, d
         quote.status = QuoteStatus.APPROVED
         quote.last_edited_by_user_id = current_user.id
         _log_approval(db, quote, "OVERRIDE_APPROVE", old_status, QuoteStatus.APPROVED, current_user.id, payload.comment)
+        rev = create_quote_revision(
+            db=db,
+            quote=quote,
+            action="OVERRIDE_APPROVE",
+            user_id=current_user.id,
+            change_reason=_clean_reason(payload.comment),
+            lock_quote=True,
+        )
+        db.add(rev)
         db.commit()
         committed = True
         db.refresh(quote)
         resp = QuoteResponse.model_validate(quote, from_attributes=True).model_dump()
         return mask_quote_financials(resp, current_user)
     except HTTPException:
+        if not committed:
+            db.rollback()
         raise
     except Exception as e:
         if not committed:
@@ -486,6 +566,16 @@ def refresh_quote_fx_rate(
         reason_suffix = f" Reason: {payload.comment.strip()}" if payload.comment and payload.comment.strip() else ""
         comment_text = f"FX rate refreshed: {old_fx} -> {new_fx} (Region: {region.country_name}, Currency: {quote.currency_code}).{reason_suffix}"
         _log_approval(db, quote, "REFRESH_FX_RATE", quote.status, quote.status, current_user.id, comment_text)
+
+        rev = create_quote_revision(
+            db=db,
+            quote=quote,
+            action="FX_REFRESH",
+            user_id=current_user.id,
+            change_reason=_clean_reason(payload.comment),
+            lock_quote=True,
+        )
+        db.add(rev)
 
         db.commit()
         committed = True
