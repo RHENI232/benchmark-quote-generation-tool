@@ -6,11 +6,15 @@ from typing import Optional, Any, Dict, List
 import copy
 import datetime
 from decimal import Decimal
+import logging
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
+from sqlalchemy.exc import ProgrammingError, OperationalError
 
 from backend.app.models.quote import Quote, QuoteRevision, QuoteLineItem
 from backend.app.api.deps import has_permission
+
+logger = logging.getLogger(__name__)
 
 
 SCHEMA_VERSION = "1.0"
@@ -220,18 +224,26 @@ def get_quote_revisions(
     Queries historical revisions for a quote with deterministic ordering and bounded pagination.
     Eager-loads the capturing user to optimize performance.
     """
-    query = db.query(QuoteRevision).options(
-        joinedload(QuoteRevision.user)
-    ).filter(
-        QuoteRevision.quote_id == quote_id
-    )
+    try:
+        query = db.query(QuoteRevision).options(
+            joinedload(QuoteRevision.user)
+        ).filter(
+            QuoteRevision.quote_id == quote_id
+        )
 
-    if order.lower() == "desc":
-        query = query.order_by(QuoteRevision.revision_number.desc(), QuoteRevision.id.desc())
-    else:
-        query = query.order_by(QuoteRevision.revision_number.asc(), QuoteRevision.id.asc())
+        if order.lower() == "desc":
+            query = query.order_by(QuoteRevision.revision_number.desc(), QuoteRevision.id.desc())
+        else:
+            query = query.order_by(QuoteRevision.revision_number.asc(), QuoteRevision.id.asc())
 
-    return query.offset(skip).limit(limit).all()
+        return query.offset(skip).limit(limit).all()
+    except (ProgrammingError, OperationalError) as e:
+        db.rollback()
+        error_msg = str(e).lower()
+        if "does not exist" in error_msg or "undefinedtable" in error_msg:
+            logger.warning("quote_revisions table is not yet created in database: %s", e)
+            return []
+        raise
 
 
 def get_quote_revision_by_number(
@@ -243,13 +255,21 @@ def get_quote_revision_by_number(
     Retrieves a single historical revision by quote ID and revision number.
     Eager-loads the capturing user.
     """
-    return db.query(QuoteRevision).options(
-        joinedload(QuoteRevision.user),
-        joinedload(QuoteRevision.quote)
-    ).filter(
-        QuoteRevision.quote_id == quote_id,
-        QuoteRevision.revision_number == revision_number
-    ).first()
+    try:
+        return db.query(QuoteRevision).options(
+            joinedload(QuoteRevision.user),
+            joinedload(QuoteRevision.quote)
+        ).filter(
+            QuoteRevision.quote_id == quote_id,
+            QuoteRevision.revision_number == revision_number
+        ).first()
+    except (ProgrammingError, OperationalError) as e:
+        db.rollback()
+        error_msg = str(e).lower()
+        if "does not exist" in error_msg or "undefinedtable" in error_msg:
+            logger.warning("quote_revisions table is not yet created in database: %s", e)
+            return None
+        raise
 
 
 def compare_quote_revisions(

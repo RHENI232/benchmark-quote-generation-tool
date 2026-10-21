@@ -5,6 +5,7 @@ import { regionApi } from '../api/regionApi';
 import { solutionApi } from '../api/solutionApi';
 import { useAuth, PERMISSIONS } from '../auth/AuthContext';
 import StatusBadge from '../components/common/StatusBadge';
+import RevisionHistoryCard from '../components/quotes/RevisionHistoryCard';
 import '../styles/wizard.css';
 
 export default function QuoteDetailPage() {
@@ -279,7 +280,7 @@ export default function QuoteDetailPage() {
         </div>
         <div className="meta-item">
           <div className="meta-label">Date</div>
-          <div className="meta-value">{quote.date ? new Date(quote.date).toLocaleDateString() : (quote.created_at ? new Date(quote.created_at).toLocaleDateString() : new Date().toLocaleDateString())}</div>
+          <div className="meta-value">{quote.date ? new Date(quote.date).toLocaleDateString() : (quote.created_at ? new Date(quote.created_at).toLocaleDateString() : '—')}</div>
         </div>
       </div>
 
@@ -529,6 +530,13 @@ export default function QuoteDetailPage() {
         </div>
       </div>
       </div>
+
+      {/* REVISION HISTORY TABLE */}
+      <RevisionHistoryCard
+        quoteId={quote.id}
+        currentQuoteVersion={quote.version}
+        refreshTrigger={`${quote.id}_${quote.version}_${quote.status}_${quote.updated_at || ''}`}
+      />
 
       {/* APPROVAL HISTORY TABLE */}
       {approvalLogs && approvalLogs.length > 0 && (

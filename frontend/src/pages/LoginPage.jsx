@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, Navigate } from 'react-router-dom';
+import { useNavigate, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import '../styles/login.css';
 
@@ -10,10 +10,16 @@ export default function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { login, user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const from = typeof location.state?.from === 'string'
+    ? location.state.from
+    : location.state?.from?.pathname
+      ? `${location.state.from.pathname}${location.state.from.search || ''}${location.state.from.hash || ''}`
+      : '/';
 
-  // If already logged in, redirect to dashboard
+  // If already logged in, redirect to dashboard or target location
   if (user) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={from} replace />;
   }
 
   const handleSubmit = async (e) => {
@@ -23,7 +29,7 @@ export default function LoginPage() {
 
     try {
       await login(email, password);
-      navigate('/');
+      navigate(from, { replace: true });
     } catch (err) {
       setError(err.message || 'Failed to sign in. Please check your credentials.');
     } finally {

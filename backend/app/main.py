@@ -1,6 +1,10 @@
-from fastapi import FastAPI
+import logging
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from backend.app.api.routers import auth, users, solutions, catalog, quotes, regions
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Benchmark Quote Generation API")
 
@@ -8,6 +12,10 @@ app = FastAPI(title="Benchmark Quote Generation API")
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
     "http://192.168.229.41:5173",
 ]
 
@@ -18,6 +26,15 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error("Unhandled exception processing %s %s: %s", request.method, request.url.path, exc, exc_info=True)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "Internal server error"},
+    )
 
 
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])

@@ -1,17 +1,18 @@
 import React from 'react';
-import { Navigate, Outlet } from 'react-router-dom';
+import { Navigate, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import AppLayout from '../components/layout/AppLayout';
 
 export default function ProtectedRoute({ roles, requiredPermission }) {
   const { user, isLoading, hasRole, hasPermission } = useAuth();
+  const location = useLocation();
 
   if (isLoading) {
     return <div className="loading-container">Loading application...</div>;
   }
 
   if (!user) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
   if (roles && roles.length > 0 && !hasRole(...roles)) {
@@ -39,8 +40,6 @@ export default function ProtectedRoute({ roles, requiredPermission }) {
       </AppLayout>
     );
   }
-
-
 
   return (
     <AppLayout>

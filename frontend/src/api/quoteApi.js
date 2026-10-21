@@ -122,3 +122,25 @@ export async function refreshQuoteFxRate(quoteId, payload) {
     body: payload,
   });
 }
+
+export async function getQuoteRevisions(quoteId, { skip = 0, limit = 50, order = 'asc' } = {}) {
+  const params = new URLSearchParams();
+  if (skip !== undefined && skip !== null) params.append('skip', skip);
+  if (limit !== undefined && limit !== null) params.append('limit', limit);
+  if (order) params.append('order', order);
+  return fetchClient(`/api/quotes/${quoteId}/revisions?${params.toString()}`);
+}
+
+export async function getQuoteRevision(quoteId, revisionNumber) {
+  return fetchClient(`/api/quotes/${quoteId}/revisions/${revisionNumber}`);
+}
+
+export async function compareQuoteRevisions(quoteId, baseRevision, targetRevision) {
+  const params = new URLSearchParams({
+    base_revision: baseRevision,
+    target_revision: targetRevision,
+  });
+  return fetchClient(`/api/quotes/${quoteId}/revisions/compare?${params.toString()}`);
+}
+
+

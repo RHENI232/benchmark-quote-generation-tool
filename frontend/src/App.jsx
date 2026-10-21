@@ -8,6 +8,8 @@ import DashboardPage from './pages/DashboardPage';
 import QuoteListPage from './pages/QuoteListPage';
 import QuoteWizardPage from './pages/QuoteWizardPage';
 import QuoteDetailPage from './pages/QuoteDetailPage';
+import QuoteRevisionViewerPage from './pages/QuoteRevisionViewerPage';
+import QuoteRevisionComparePage from './pages/QuoteRevisionComparePage';
 import ApprovalQueuePage from './pages/ApprovalQueuePage';
 import CatalogPricingPage from './pages/CatalogPricingPage';
 import UserAdminPage from './pages/UserAdminPage';
@@ -26,6 +28,8 @@ function App() {
             <Route path="/quotes" element={<QuoteListPage />} />
             <Route path="/quotes/new" element={<QuoteWizardPage />} />
             <Route path="/quotes/:id/edit" element={<QuoteWizardPage />} />
+            <Route path="/quotes/:id/revisions/compare" element={<QuoteRevisionComparePage />} />
+            <Route path="/quotes/:id/revisions/:revisionNumber" element={<QuoteRevisionViewerPage />} />
             <Route path="/quotes/:id" element={<QuoteDetailPage />} />
           </Route>
           <Route element={<ProtectedRoute requiredPermission="catalog_edit" />}>

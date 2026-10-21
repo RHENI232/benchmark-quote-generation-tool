@@ -16,7 +16,6 @@ export async function fetchClient(endpoint, { body, ...customConfig } = {}) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-
   const config = {
     method: body ? 'POST' : 'GET',
     ...customConfig,
@@ -34,17 +33,14 @@ export async function fetchClient(endpoint, { body, ...customConfig } = {}) {
   try {
     response = await fetch(`${API_BASE_URL}${endpoint}`, config);
   } catch (error) {
-    throw new Error('Network error. Please try again.');
+    const netError = new Error('Network error. Please check your connection and try again.');
+    netError.status = 0;
+    netError.isNetworkError = true;
+    netError.originalError = error;
+    throw netError;
   }
 
   if (!response.ok) {
-    if (response.status === 401) {
-      // Token is invalid/expired - clear it
-      localStorage.removeItem('access_token');
-      // A full page reload will trigger the route guard to redirect to /login
-      window.dispatchEvent(new Event('unauthorized'));
-    }
-
     let errorMsg = 'An error occurred';
     try {
       const errorData = await response.json();
@@ -55,10 +51,26 @@ export async function fetchClient(endpoint, { body, ...customConfig } = {}) {
           errorMsg = errorData.detail;
         }
       }
-    } catch (e) {
-      // Failed to parse JSON error
+    } catch {
+      if (response.statusText) {
+        errorMsg = response.statusText;
+      }
     }
-    throw new Error(errorMsg);
+
+    if (
+      response.status === 401 ||
+      (response.status === 403 && (errorMsg === 'Not authenticated' || errorMsg.toLowerCase().includes('credential')))
+    ) {
+      // Token is invalid/expired - clear it
+      localStorage.removeItem('access_token');
+      // Dispatch unauthorized event to notify AuthContext to update auth state
+      window.dispatchEvent(new Event('unauthorized'));
+    }
+
+    const error = new Error(errorMsg);
+    error.status = response.status;
+    error.detail = errorMsg;
+    throw error;
   }
 
   if (response.status === 204) {
